@@ -1,0 +1,74 @@
+<!--
+Trimmed capture of POST https://m.thankqcamping.com/resv/axResCampSite.hbb
+(campseq=1&res_dt=20260905&res_edt=20260905&res_days=1) on 2026-08-29 KST.
+
+The live fragment ships a commented-out duplicate <li> for every zone; one is
+kept below so the parser's comment-stripping stays covered. A "red" (예약불가)
+badge is included too — the live capture that day had only og / 예약완료.
+-->
+<ul class="site_ul">
+  <li style="">
+    <div class="site_div type2" onClick="goNoMemResAlert('113092','');" style="cursor:pointer;">
+      <div class="top">
+        <div class="pic_div">
+          <!-- 예약완료 기본 / og : 예약가능 / red : 예약불가 -->
+          <span class="q_tip og">예약가능 <em>34</em></span>
+        </div>
+        <div class="txt_div">
+          <div><p class="na">사이트 A</p><p class="time">입실 14시ㆍ퇴실 12시</p></div>
+          <div class="num_div"><p class="pri">45,000원</p></div>
+        </div>
+      </div>
+      <ul class="ico_div"><li class="item"><span>오토캠핑</span></li></ul>
+    </div>
+  </li>
+  <!--li>
+    <div class="site_div" onClick="goNoMemResAlert('113092');">
+      <p class="txt">예약가능 <span>34</span>자리</p>
+      <p class="tit">[사이트 A]</p>
+      <p class="pri">45,000원</p>
+    </div>
+  </li-->
+
+  <li style="">
+    <div class="site_div type2" onClick="goNoMemResAlert('113093','');" style="cursor:pointer;">
+      <div class="top">
+        <div class="pic_div">
+          <span class="q_tip">예약완료</span>
+        </div>
+        <div class="txt_div">
+          <div><p class="na">사이트 B</p></div>
+          <div class="num_div"><p class="pri">45,000원</p></div>
+        </div>
+      </div>
+    </div>
+  </li>
+
+  <li style="">
+    <div class="site_div type2" onClick="goNoMemResAlert('113101','');" style="cursor:pointer;">
+      <div class="top">
+        <div class="pic_div">
+          <span class="q_tip red">예약불가</span>
+        </div>
+        <div class="txt_div">
+          <div><p class="na">카라반 B</p></div>
+          <div class="num_div"><p class="pri">140,000원</p></div>
+        </div>
+      </div>
+    </div>
+  </li>
+
+  <li style="">
+    <div class="site_div type2" onClick="goNoMemResAlert('113102','');" style="cursor:pointer;">
+      <div class="top">
+        <div class="pic_div">
+          <span class="q_tip og">예약가능 <em>12</em></span>
+        </div>
+        <div class="txt_div">
+          <div><p class="na">카라반 C</p></div>
+          <div class="num_div"><p class="pri">160,000원</p></div>
+        </div>
+      </div>
+    </div>
+  </li>
+</ul>

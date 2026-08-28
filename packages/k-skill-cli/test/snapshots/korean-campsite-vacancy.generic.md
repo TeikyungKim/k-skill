@@ -45,7 +45,7 @@ Runtime mode: generic
 ## Prerequisites
 
 - Python 3.9+
-- Playwright Chromium browser
+- Playwright Chromium browser — **`dzsmart` transport에만 필요하다.** `thankq` transport는 표준 라이브러리만 쓰므로 브라우저 없이 동작한다.
 
 ```bash
 python3 -m pip install playwright
@@ -66,12 +66,14 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 - `provider id`: 예) `gtdc-yeongok`
 - `운영기관`: 실제 운영 주체
 - `entrypoint`: 공식 예약 진입 URL
-- `transport`: 데이터를 어떻게 얻는지 (`dzsmart` 페이지 파싱 / JSON API / `delegate`)
+- `transport`: 데이터를 어떻게 얻는지 (`dzsmart` 브라우저 렌더 파싱 / `thankq` form POST / `delegate`)
 - `zone 모델`: 존·사이트 구분 방식
 - `date 모델`: 날짜가 어디에 인코딩되는지
 - `parser`: 잔여 면수를 어느 필드에서 뽑는지
 - `로그인 필요 여부`
-- `rate limit`: 호출 간격과 월 조회 상한
+- `rate limit`: 호출 간격과 조회 상한
+
+**운영기관이 공공(지자체·공단·공사)일 때만 등록한다.** 예약 창구가 땡큐캠핑 같은 민간 플랫폼이어도 운영 주체가 공공이면 대상이고, 반대로 민간이 운영하는 사설 캠핑장은 같은 플랫폼에 있어도 등록하지 않는다.
 
 현재 레지스트리는 아래와 같다. 자세한 근거는 `npx -y @nomadamas/k-skill@0 read korean-campsite-vacancy references/PROVIDERS.md`를 읽는다.
 
@@ -80,6 +82,7 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 | `gtdc-yeongok` | 연곡해변 솔향기캠핑장 | 강릉관광개발공사 | `dzsmart` | 불필요 |
 | `gtdc-badanaeum` | 강릉바다내음캠핑장 | 강릉관광개발공사 | `dzsmart` | 불필요 |
 | `gtdc-ojuk` | 강릉오죽한옥마을(숙박) | 강릉관광개발공사 | `dzsmart` | 불필요 |
+| `thankq-jaraseom` | 자라섬캠핑장 | 가평군시설관리공단 | `thankq` | 불필요 |
 | `foresttrip` | 국립자연휴양림 | 산림청 | `delegate` | 필요 |
 
 `foresttrip`은 조회 경로가 아니라 **위임 표시**다. 이 provider를 지정하면 helper는 `foresttrip-vacancy` 스킬을 쓰라는 오류를 낸다.
@@ -139,7 +142,8 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 - 조회 날짜와 캠핑장명
 - 존별 잔여 면수 (마감이면 마감이라고 쓴다)
 - 시즌 구분(성수기/준성수기/비수기)이 있으면 요금 판단에 영향을 주므로 함께 전달
-- `fetch_failures`가 0이 아니면 실패한 provider와 월을 함께 보고
+- 요금이 함께 오면(`thankq`) 같이 전달한다. 주말·주중 요금이 다르다
+- `fetch_failures`가 0이 아니면 실패한 provider와 실패 범위(`scope`)를 함께 보고
 
 빈자리가 없으면 **"조회 시점 기준 예약 가능 사이트 없음"** 이라고 명확히 말한다. 잔여 면수는 실시간으로 바뀌므로 실제 예약 화면에서 재확인될 수 있음을 덧붙인다.
 
@@ -164,16 +168,18 @@ https://camping.gtdc.or.kr/pub/reserv.do
 
 ## Failure modes
 
-- Playwright 미설치: `python3 -m pip install playwright && python3 -m playwright install chromium`
+- Playwright 미설치: `python3 -m pip install playwright && python3 -m playwright install chromium` (`dzsmart` provider에만 해당)
+- `thankq` 500 응답: 날짜 형식이 `YYYYMMDD`가 아니거나 `camp_seq`가 잘못됐다
 - `wait_for_selector` timeout: 예약 시스템 점검 중이거나 해당 월이 아직 오픈 전이다. 월을 바꿔 재확인하고, 그래도 비면 "해당 월 예약 미오픈"으로 보고한다
 - 결과가 전부 마감: 정상 동작이다. 성수기 주말은 대부분 마감이다
 - 존 이름이 바뀜: dzSmart 존 구성은 운영기관이 시즌마다 바꾼다. `--include-full`로 원본 존 목록을 먼저 확인한다
-- 파서가 0건 반환: 사이트가 dzSmart 렌더링 구조를 바꿨을 가능성이 높다. `tests/fixtures/gtdc_yeongok_202608.html`와 실제 DOM을 비교해 `parse_month_html`을 점검한다
+- 파서가 0건 반환: 사이트가 렌더링 구조를 바꿨을 가능성이 높다. `tests/fixtures/`의 캡처와 실제 응답을 비교해 `parse_month_html`(dzsmart) 또는 `parse_thankq_html`(thankq)을 점검한다
 - 월 조회 상한 초과: 요청 날짜가 6개월을 넘게 걸쳐 있다. 날짜를 나눠 조회한다
 
 ## Rate limit
 
-- 한 번의 조회는 provider × 월 단위로 페이지를 1회씩만 연다.
+- `dzsmart`는 provider × 월 단위로 페이지를 1회씩만 연다.
+- `thankq`는 월 조회 화면이 없어 provider × 날짜 단위로 1회씩 요청한다. 날짜 범위를 넓게 잡으면 요청 수가 그만큼 늘어나므로 필요한 날짜만 지정한다.
 - 취소표를 노린 반복 폴링을 하지 않는다. 사용자가 반복 확인을 원하면 공식 알림 기능을 안내한다.
 
 ## Maintainer review notes
@@ -194,3 +200,4 @@ https://camping.gtdc.or.kr/pub/reserv.do
 - 캡차·SMS 본인인증을 대신 처리하지 않는다.
 - 레지스트리에 없는 사이트를 URL 패턴으로 추측해 조회하지 않는다.
 - 공개 예약 화면이 노출하는 잔여 수만 읽고, 개인 예약 내역 조회 화면에는 접근하지 않는다.
+- 민간 플랫폼(`thankq`)에서는 등록된 공공 운영 캠핑장만 조회한다. `camp_seq`를 임의로 바꿔 사설 캠핑장을 훑지 않는다.

@@ -18,11 +18,14 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Callable
 
 DEFAULT_TIMEOUT_MS = 30000
+USER_AGENT = "Mozilla/5.0 (compatible; k-skill korean-campsite-vacancy; +https://github.com/NomaDamas/k-skill)"
 MAX_MONTHS = 6
 SOLD_OUT_MARKERS = ("마감", "예약마감", "-")
 
@@ -40,6 +43,7 @@ class Provider:
     kind: str
     note: str = ""
     delegate: str | None = None
+    camp_seq: str | None = None
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -70,6 +74,17 @@ PROVIDERS: dict[str, Provider] = {
         requires_login=False,
         kind="lodging",
         note="캠핑장이 아니라 한옥 숙박이다. 같은 dzSmart 예약 시스템을 쓴다.",
+    ),
+    "thankq-jaraseom": Provider(
+        id="thankq-jaraseom",
+        name="자라섬캠핑장",
+        operator="가평군시설관리공단",
+        entrypoint="https://m.thankqcamping.com",
+        transport="thankq",
+        requires_login=False,
+        kind="camping",
+        note="가평군이 땡큐캠핑 플랫폼에 입점한 형태다. 플랫폼 공통 어댑터를 쓴다.",
+        camp_seq="1",
     ),
     "foresttrip": Provider(
         id="foresttrip",
@@ -156,6 +171,92 @@ def parse_month_html(html: str) -> list[dict[str, Any]]:
             )
 
     return [days[key] for key in sorted(days)]
+
+
+# --- transport: thankq ------------------------------------------------------
+#
+# 땡큐캠핑(ThankQ Camping) is a commercial booking platform that several municipal
+# campgrounds rent instead of running their own system. Unlike dzSmart it answers
+# a plain form POST, so this transport needs no browser at all.
+#
+# Rendered availability badge:
+#   <span class="q_tip og">예약가능 <em>34</em></span>   -> bookable, 34 left
+#   <span class="q_tip">예약완료</span>                   -> sold out
+#   <span class="q_tip red">예약불가</span>               -> not bookable
+THANKQ_SITE_PATH = "/resv/axResCampSite.hbb"
+COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+THANKQ_BLOCK_RE = re.compile(r'class="site_div', re.IGNORECASE)
+THANKQ_NAME_RE = re.compile(r'<p class="na">(?P<name>.*?)</p>', re.IGNORECASE | re.DOTALL)
+THANKQ_BADGE_RE = re.compile(
+    r'<span class="q_tip(?P<state>[^"]*)">(?P<label>[^<]*)(?:<em>(?P<count>\d+)</em>)?',
+    re.IGNORECASE,
+)
+THANKQ_PRICE_RE = re.compile(r'<p class="pri">(?P<price>.*?)</p>', re.IGNORECASE | re.DOTALL)
+
+
+def parse_thankq_html(html: str) -> list[dict[str, Any]]:
+    """Parse one 땡큐캠핑 site-list fragment into zone records.
+
+    Pure function. The fragment ships a commented-out duplicate of every block,
+    so comments are stripped first to avoid counting each zone twice.
+    """
+    cleaned = COMMENT_RE.sub("", html)
+    zones: list[dict[str, Any]] = []
+
+    for index, block in enumerate(THANKQ_BLOCK_RE.split(cleaned)[1:]):
+        name_match = THANKQ_NAME_RE.search(block)
+        badge_match = THANKQ_BADGE_RE.search(block)
+        if not name_match or not badge_match:
+            continue
+
+        state = (badge_match.group("state") or "").strip().lower()
+        count = badge_match.group("count")
+        remaining = int(count) if state == "og" and count else None
+        price_match = THANKQ_PRICE_RE.search(block)
+
+        zones.append(
+            {
+                "zone_id": str(index + 1),
+                "zone": strip_tags(name_match.group("name")),
+                "remaining": remaining,
+                "available": remaining is not None and remaining > 0,
+                "price": strip_tags(price_match.group("price")) if price_match else None,
+            }
+        )
+
+    return zones
+
+
+def fetch_thankq_day(
+    entrypoint: str,
+    camp_seq: str,
+    use_dt: str,
+    *,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+) -> str:
+    """POST the official site-list form for one date and return its HTML fragment."""
+    payload = urllib.parse.urlencode(
+        {
+            "campseq": camp_seq,
+            "res_dt": use_dt,
+            "res_edt": use_dt,
+            "res_days": "1",
+            "site_tp": "",
+            "only_able_yn": "",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        entrypoint.rstrip("/") + THANKQ_SITE_PATH,
+        data=payload,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"{entrypoint.rstrip('/')}/resv/view.hbb?cseq={camp_seq}",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout_ms / 1000) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 
 def fetch_month_html(entrypoint: str, month: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> str:
@@ -274,17 +375,79 @@ def months_for(dates: tuple[str, ...]) -> list[str]:
     return months
 
 
+def collect_dzsmart(
+    provider: Provider,
+    dates: tuple[str, ...],
+    fetch: Callable[[str, str], str],
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
+    """One page load per month, then keep only the requested days."""
+    wanted = set(dates)
+    days: dict[str, dict[str, Any]] = {}
+    failures: list[dict[str, str]] = []
+
+    for month in months_for(dates):
+        try:
+            html = fetch(provider.entrypoint, month)
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            failures.append({"provider": provider.id, "scope": month, "error": describe(exc)})
+            continue
+
+        for day in parse_month_html(html):
+            if day["use_dt"] in wanted:
+                days[day["use_dt"]] = {
+                    "use_dt": day["use_dt"],
+                    "season": day["season"],
+                    "zones": day["zones"],
+                }
+
+    return days, failures
+
+
+def collect_thankq(
+    provider: Provider,
+    dates: tuple[str, ...],
+    fetch: Callable[[str, str, str], str],
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
+    """One form POST per requested date; the platform has no month view."""
+    days: dict[str, dict[str, Any]] = {}
+    failures: list[dict[str, str]] = []
+    camp_seq = provider.camp_seq or ""
+
+    for use_dt in dates:
+        try:
+            html = fetch(provider.entrypoint, camp_seq, use_dt)
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            failures.append({"provider": provider.id, "scope": use_dt, "error": describe(exc)})
+            continue
+
+        zones = parse_thankq_html(html)
+        if zones:
+            days[use_dt] = {"use_dt": use_dt, "season": None, "zones": zones}
+
+    return days, failures
+
+
+def describe(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
 def collect_results(
     *,
     provider_ids: tuple[str, ...],
     dates: tuple[str, ...],
     include_full: bool = False,
     zone_filter: str | None = None,
-    fetcher: Callable[[str, str], str] | None = None,
+    fetchers: dict[str, Callable[..., str]] | None = None,
 ) -> dict[str, Any]:
-    fetch = fetcher or (lambda entrypoint, month: fetch_month_html(entrypoint, month))
-    wanted = set(dates)
-    months = months_for(dates)
+    active = {
+        "dzsmart": fetch_month_html,
+        "thankq": fetch_thankq_day,
+        **(fetchers or {}),
+    }
 
     results: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
@@ -292,49 +455,45 @@ def collect_results(
 
     for provider_id in provider_ids:
         provider = PROVIDERS[provider_id]
-        day_rows: dict[str, dict[str, Any]] = {}
-
-        for month in months:
-            try:
-                html = fetch(provider.entrypoint, month)
-            except SystemExit:
-                raise
-            except Exception as exc:  # noqa: BLE001 - reported, never swallowed
-                failures.append(
-                    {
-                        "provider": provider_id,
-                        "month": month,
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
-                )
-                continue
-
-            for day in parse_month_html(html):
-                if day["use_dt"] not in wanted:
-                    continue
-                zones = day["zones"]
-                if zone_filter:
-                    needle = zone_filter.lower()
-                    zones = [zone for zone in zones if needle in zone["zone"].lower()]
-                if not include_full:
-                    zones = [zone for zone in zones if zone["available"]]
-                if not zones:
-                    continue
-                hits += sum(1 for zone in zones if zone["available"])
-                day_rows[day["use_dt"]] = {
-                    "use_dt": day["use_dt"],
-                    "season": day["season"],
-                    "zones": zones,
+        fetch = active.get(provider.transport)
+        if fetch is None:
+            failures.append(
+                {
+                    "provider": provider_id,
+                    "scope": "-",
+                    "error": f"no adapter for transport '{provider.transport}'",
                 }
+            )
+            continue
 
-        if day_rows:
+        if provider.transport == "thankq":
+            day_rows, provider_failures = collect_thankq(provider, dates, fetch)
+        else:
+            day_rows, provider_failures = collect_dzsmart(provider, dates, fetch)
+        failures.extend(provider_failures)
+
+        kept: dict[str, dict[str, Any]] = {}
+        for use_dt, day in day_rows.items():
+            zones = day["zones"]
+            if zone_filter:
+                needle = zone_filter.lower()
+                zones = [zone for zone in zones if needle in zone["zone"].lower()]
+            if not include_full:
+                zones = [zone for zone in zones if zone["available"]]
+            if not zones:
+                continue
+            hits += sum(1 for zone in zones if zone["available"])
+            kept[use_dt] = {"use_dt": use_dt, "season": day["season"], "zones": zones}
+
+        if kept:
             results.append(
                 {
                     "provider": provider_id,
                     "name": provider.name,
                     "operator": provider.operator,
+                    "transport": provider.transport,
                     "entrypoint": provider.entrypoint,
-                    "dates": [day_rows[key] for key in sorted(day_rows)],
+                    "dates": [kept[key] for key in sorted(kept)],
                 }
             )
 
@@ -379,7 +538,8 @@ def print_text(payload: dict[str, Any]) -> None:
             print(f"  {day['use_dt']}{season}")
             for zone in day["zones"]:
                 remaining = "마감" if zone["remaining"] is None else f"{zone['remaining']}면"
-                print(f"    - {zone['zone']} / {remaining}")
+                price = f" / {zone['price']}" if zone.get("price") else ""
+                print(f"    - {zone['zone']} / {remaining}{price}")
     for failure in payload["failures"]:
         print(f"\n! fetch failed: {failure['provider']} {failure['month']} — {failure['error']}")
 
@@ -430,9 +590,14 @@ def main(argv: list[str] | None = None) -> int:
         dates=dates,
         include_full=args.include_full,
         zone_filter=args.zone,
-        fetcher=lambda entrypoint, month: fetch_month_html(
-            entrypoint, month, timeout_ms=args.timeout_ms
-        ),
+        fetchers={
+            "dzsmart": lambda entrypoint, month: fetch_month_html(
+                entrypoint, month, timeout_ms=args.timeout_ms
+            ),
+            "thankq": lambda entrypoint, camp_seq, use_dt: fetch_thankq_day(
+                entrypoint, camp_seq, use_dt, timeout_ms=args.timeout_ms
+            ),
+        },
     )
 
     if args.text and not args.json:

@@ -31,13 +31,14 @@
 | `gtdc-yeongok` | 연곡해변 솔향기캠핑장 | 강릉관광개발공사 | 불필요 |
 | `gtdc-badanaeum` | 강릉바다내음캠핑장 | 강릉관광개발공사 | 불필요 |
 | `gtdc-ojuk` | 강릉오죽한옥마을(한옥 숙박) | 강릉관광개발공사 | 불필요 |
+| `thankq-jaraseom` | 자라섬캠핑장 | 가평군시설관리공단 | 불필요 |
 
 국립자연휴양림은 [자연휴양림 빈 객실 조회 가이드](foresttrip-vacancy.md)를 본다. 레지스트리에는 `foresttrip`이 **위임 표시**로만 들어 있어, 해당 provider를 지정하면 올바른 스킬을 안내하는 오류가 난다.
 
 ## 먼저 필요한 것
 
 - Python 3.9+
-- Playwright Chromium
+- Playwright Chromium — **`dzsmart` 경로(강릉 3곳)에만 필요하다.** 자라섬(`thankq`)은 표준 라이브러리만으로 조회된다
 - [공통 설정 가이드](../setup.md) 완료
 
 ```bash
@@ -81,6 +82,10 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 
 ## 동작 방식
 
+운영기관마다 예약 시스템이 달라 transport를 나눠 둔다.
+
+### `dzsmart` — 강릉관광개발공사 3곳
+
 강릉관광개발공사 사이트는 **dzSmart(denobiz)** 예약 플러그인을 쓴다.
 
 1. `GET {entrypoint}/pub/reserv.do?tmonth=YYYYMM` 은 셸만 내려주고 캘린더는 비어 있다.
@@ -91,6 +96,21 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 
 파싱은 `button[value="{zoneId}-{YY}-{MM}-{DD}-{seq}"]` 에서 날짜를 뽑고, `span.tit`(존 이름)과 `span.num`(잔여 면수 또는 `마감`)을 읽는다. `disabled` 속성이 있으면 숫자가 있어도 마감으로 처리한다. `8월 30일 (일)` 같은 로케일 문자열은 파싱하지 않는다.
 
+### `thankq` — 자라섬캠핑장
+
+가평군시설관리공단은 자체 시스템 대신 **땡큐캠핑** 이라는 민간 예약 플랫폼에 입점해 있다. 이쪽은 **브라우저가 필요 없다.** 평범한 form POST 하나로 끝난다.
+
+```
+POST https://m.thankqcamping.com/resv/axResCampSite.hbb
+campseq=1&res_dt=20260905&res_edt=20260905&res_days=1&site_tp=&only_able_yn=
+```
+
+날짜는 `YYYYMMDD`여야 하고(`2026-09-05`로 보내면 500), 월 단위 조회 화면이 없어 **날짜당 1회**씩 요청한다. 응답 HTML의 `span.q_tip` 클래스가 상태를 결정한다 — `og`면 예약가능이고 `<em>` 안이 잔여 면수, 클래스가 없으면 `예약완료`, `red`면 `예약불가`다. 요금(`p.pri`)도 함께 온다.
+
+응답에는 존마다 구버전 마크업이 주석으로 중복돼 들어오므로, 파서는 주석을 먼저 제거한 뒤 존을 센다.
+
+> **플랫폼이 민간인 것과 캠핑장이 민간인 것은 다르다.** 등록 기준은 **운영기관**이다. 자라섬은 가평군시설관리공단이 운영하므로 대상이고, 같은 플랫폼의 사설 캠핑장은 대상이 아니다. dzSmart도 denobiz라는 민간 업체 제품이라는 점에서 사정이 같다. helper는 레지스트리에 등록된 id만 받으므로 `campseq`를 임의로 바꿔 사설 캠핑장을 훑을 경로가 없다.
+
 ## 경계
 
 예약 응답의 `sets`에 `captcha: true`, `smsauth: true`가 들어 있다. **예약 경로에는 캡차와 SMS 본인인증이 있으며 대신 통과하지 않는다.** 예약을 원하면 공식 예약 페이지 URL을 안내하고 사용자가 직접 진행한다.
@@ -99,7 +119,8 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 
 ## 실패 모드
 
-- Playwright 미설치: `python3 -m pip install playwright && python3 -m playwright install chromium`
+- Playwright 미설치: `python3 -m pip install playwright && python3 -m playwright install chromium` (`dzsmart` 경로에만 해당)
+- `thankq` 500 응답: 날짜 형식이 `YYYYMMDD`가 아니다
 - `wait_for_selector` timeout: 예약 시스템 점검 중이거나 해당 월이 아직 오픈 전이다
 - 결과가 전부 마감: 정상 동작이다. 성수기 주말은 대부분 마감이다
 - 파서가 0건 반환: 사이트가 렌더링 구조를 바꿨을 가능성이 높다. `korean-campsite-vacancy/tests/fixtures/gtdc_yeongok_202608.html`와 실제 DOM을 비교한다
@@ -113,4 +134,6 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 npx -y @nomadamas/k-skill@0 read korean-campsite-vacancy references/PROVIDERS.md
 ```
 
-예약 페이지 HTML에 `/dzSmart/plugins/Reserv/` 문자열이 있으면 `PROVIDERS` 레지스트리에 항목만 추가하면 된다. 다른 시스템이면 새 transport 함수를 만들고, 파서는 **순수 함수**로 분리해 브라우저 없이 테스트할 수 있게 둔다.
+예약 페이지 HTML에 `/dzSmart/plugins/Reserv/` 문자열이 있거나, 예약 버튼이 `thankqcamping.com`으로 나가면 `PROVIDERS` 레지스트리에 항목만 추가하면 된다. 다른 시스템이면 새 transport 함수를 만들고, 파서는 **순수 함수**로 분리해 브라우저 없이 테스트할 수 있게 둔다.
+
+등록 전에 **운영기관이 공공인지 반드시 확인한다.**

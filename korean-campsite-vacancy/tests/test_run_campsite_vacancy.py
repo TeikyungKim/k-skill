@@ -7,6 +7,7 @@ import unittest
 from contextlib import redirect_stdout
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -27,10 +28,19 @@ def load_helper():
 helper = load_helper()
 
 YEONGOK_HTML = (FIXTURES_DIR / "gtdc_yeongok_202608.html").read_text(encoding="utf-8")
+JARASEOM_HTML = (FIXTURES_DIR / "thankq_jaraseom_20260905.html").read_text(encoding="utf-8")
 
 
 def fixture_fetcher(_entrypoint, _month):
     return YEONGOK_HTML
+
+
+def thankq_fetcher(_entrypoint, _camp_seq, _use_dt):
+    return JARASEOM_HTML
+
+
+DZSMART_FETCHERS = {"dzsmart": fixture_fetcher}
+ALL_FETCHERS = {"dzsmart": fixture_fetcher, "thankq": thankq_fetcher}
 
 
 class ParseMonthHtmlTest(unittest.TestCase):
@@ -126,7 +136,7 @@ class CollectResultsTest(unittest.TestCase):
         payload = helper.collect_results(
             provider_ids=("gtdc-yeongok",),
             dates=("20260829",),
-            fetcher=fixture_fetcher,
+            fetchers=DZSMART_FETCHERS,
         )
         zones = payload["results"][0]["dates"][0]["zones"]
         self.assertEqual([zone["zone"] for zone in zones], ["B-일반형데크"])
@@ -138,7 +148,7 @@ class CollectResultsTest(unittest.TestCase):
             provider_ids=("gtdc-yeongok",),
             dates=("20260829",),
             include_full=True,
-            fetcher=fixture_fetcher,
+            fetchers=DZSMART_FETCHERS,
         )
         zones = payload["results"][0]["dates"][0]["zones"]
         self.assertEqual(len(zones), 4)
@@ -149,7 +159,7 @@ class CollectResultsTest(unittest.TestCase):
             provider_ids=("gtdc-yeongok",),
             dates=("20260830",),
             zone_filter="글램핑",
-            fetcher=fixture_fetcher,
+            fetchers=DZSMART_FETCHERS,
         )
         zones = payload["results"][0]["dates"][0]["zones"]
         self.assertEqual([zone["zone"] for zone in zones], ["G-글램핑"])
@@ -158,7 +168,7 @@ class CollectResultsTest(unittest.TestCase):
         payload = helper.collect_results(
             provider_ids=("gtdc-yeongok",),
             dates=("20260831",),
-            fetcher=fixture_fetcher,
+            fetchers=DZSMART_FETCHERS,
         )
         self.assertEqual([day["use_dt"] for day in payload["results"][0]["dates"]], ["20260831"])
 
@@ -166,7 +176,7 @@ class CollectResultsTest(unittest.TestCase):
         payload = helper.collect_results(
             provider_ids=("gtdc-yeongok",),
             dates=("20260901",),
-            fetcher=fixture_fetcher,
+            fetchers=DZSMART_FETCHERS,
         )
         self.assertEqual(payload["results"], [])
         self.assertEqual(payload["filter_hits"], 0)
@@ -178,7 +188,7 @@ class CollectResultsTest(unittest.TestCase):
         payload = helper.collect_results(
             provider_ids=("gtdc-yeongok",),
             dates=("20260829",),
-            fetcher=boom,
+            fetchers={"dzsmart": boom},
         )
         self.assertEqual(payload["fetch_failures"], 1)
         self.assertIn("upstream 503", payload["failures"][0]["error"])
@@ -188,7 +198,7 @@ class CollectResultsTest(unittest.TestCase):
         payload = helper.collect_results(
             provider_ids=("gtdc-yeongok", "gtdc-badanaeum"),
             dates=("20260830",),
-            fetcher=fixture_fetcher,
+            fetchers=DZSMART_FETCHERS,
         )
         self.assertEqual(payload["providers_scanned"], 2)
         self.assertEqual(
@@ -197,12 +207,135 @@ class CollectResultsTest(unittest.TestCase):
         )
 
 
+class ParseThankqHtmlTest(unittest.TestCase):
+    def setUp(self):
+        self.zones = helper.parse_thankq_html(JARASEOM_HTML)
+        self.by_name = {zone["zone"]: zone for zone in self.zones}
+
+    def test_commented_duplicate_blocks_are_not_counted_twice(self):
+        self.assertEqual(len(self.zones), 4)
+        self.assertEqual(
+            [zone["zone"] for zone in self.zones],
+            ["사이트 A", "사이트 B", "카라반 B", "카라반 C"],
+        )
+
+    def test_og_badge_keeps_the_remaining_count(self):
+        self.assertEqual(self.by_name["사이트 A"]["remaining"], 34)
+        self.assertTrue(self.by_name["사이트 A"]["available"])
+
+    def test_sold_out_badge_reads_as_unavailable(self):
+        self.assertIsNone(self.by_name["사이트 B"]["remaining"])
+        self.assertFalse(self.by_name["사이트 B"]["available"])
+
+    def test_red_badge_reads_as_unavailable(self):
+        self.assertIsNone(self.by_name["카라반 B"]["remaining"])
+        self.assertFalse(self.by_name["카라반 B"]["available"])
+
+    def test_price_is_captured(self):
+        self.assertEqual(self.by_name["사이트 A"]["price"], "45,000원")
+        self.assertEqual(self.by_name["카라반 C"]["price"], "160,000원")
+
+    def test_unparsable_fragment_yields_no_zones(self):
+        self.assertEqual(helper.parse_thankq_html("<html><body>점검중</body></html>"), [])
+
+
+class ThankqCollectTest(unittest.TestCase):
+    def test_one_request_per_date_and_available_only(self):
+        payload = helper.collect_results(
+            provider_ids=("thankq-jaraseom",),
+            dates=("20260905", "20260906"),
+            fetchers=ALL_FETCHERS,
+        )
+        site = payload["results"][0]
+        self.assertEqual(site["operator"], "가평군시설관리공단")
+        self.assertEqual(site["transport"], "thankq")
+        self.assertEqual([day["use_dt"] for day in site["dates"]], ["20260905", "20260906"])
+        self.assertEqual(
+            [zone["zone"] for zone in site["dates"][0]["zones"]], ["사이트 A", "카라반 C"]
+        )
+
+    def test_thankq_has_no_season(self):
+        payload = helper.collect_results(
+            provider_ids=("thankq-jaraseom",),
+            dates=("20260905",),
+            fetchers=ALL_FETCHERS,
+        )
+        self.assertIsNone(payload["results"][0]["dates"][0]["season"])
+
+    def test_include_full_keeps_sold_out_zones(self):
+        payload = helper.collect_results(
+            provider_ids=("thankq-jaraseom",),
+            dates=("20260905",),
+            include_full=True,
+            fetchers=ALL_FETCHERS,
+        )
+        self.assertEqual(len(payload["results"][0]["dates"][0]["zones"]), 4)
+
+    def test_failure_scope_is_the_date_not_the_month(self):
+        def boom(_entrypoint, _camp_seq, _use_dt):
+            raise RuntimeError("upstream 500")
+
+        payload = helper.collect_results(
+            provider_ids=("thankq-jaraseom",),
+            dates=("20260905",),
+            fetchers={"thankq": boom},
+        )
+        self.assertEqual(payload["fetch_failures"], 1)
+        self.assertEqual(payload["failures"][0]["scope"], "20260905")
+
+    def test_mixed_transports_share_one_payload(self):
+        payload = helper.collect_results(
+            provider_ids=("gtdc-yeongok", "thankq-jaraseom"),
+            dates=("20260830",),
+            fetchers=ALL_FETCHERS,
+        )
+        self.assertEqual(
+            [site["transport"] for site in payload["results"]], ["dzsmart", "thankq"]
+        )
+
+    def test_unknown_transport_is_reported_not_crashed(self):
+        bogus = helper.Provider(
+            id="bogus",
+            name="테스트",
+            operator="테스트공단",
+            entrypoint="https://example.invalid",
+            transport="nope",
+            requires_login=False,
+            kind="camping",
+        )
+        with mock.patch.dict(helper.PROVIDERS, {"bogus": bogus}):
+            payload = helper.collect_results(
+                provider_ids=("bogus",),
+                dates=("20260830",),
+                fetchers=ALL_FETCHERS,
+            )
+        self.assertEqual(payload["fetch_failures"], 1)
+        self.assertIn("no adapter for transport", payload["failures"][0]["error"])
+        self.assertEqual(payload["results"], [])
+
+
+class RegistryScopeTest(unittest.TestCase):
+    def test_every_lookup_provider_names_a_public_operator(self):
+        for pid in helper.LOOKUP_PROVIDER_IDS:
+            provider = helper.PROVIDERS[pid]
+            self.assertTrue(
+                provider.operator.endswith(("공사", "공단", "시", "군", "구", "청")),
+                f"{pid} operator '{provider.operator}' must be a public body",
+            )
+
+    def test_thankq_provider_pins_a_camp_seq(self):
+        self.assertEqual(helper.PROVIDERS["thankq-jaraseom"].camp_seq, "1")
+
+    def test_dzsmart_providers_do_not_need_a_camp_seq(self):
+        self.assertIsNone(helper.PROVIDERS["gtdc-yeongok"].camp_seq)
+
+
 class OutputTest(unittest.TestCase):
     def setUp(self):
         self.payload = helper.collect_results(
             provider_ids=("gtdc-yeongok",),
             dates=("20260830",),
-            fetcher=fixture_fetcher,
+            fetchers=DZSMART_FETCHERS,
         )
 
     def test_text_output_mentions_site_and_counts(self):
@@ -218,7 +351,7 @@ class OutputTest(unittest.TestCase):
         empty = helper.collect_results(
             provider_ids=("gtdc-yeongok",),
             dates=("20260901",),
-            fetcher=fixture_fetcher,
+            fetchers=DZSMART_FETCHERS,
         )
         buffer = io.StringIO()
         with redirect_stdout(buffer):

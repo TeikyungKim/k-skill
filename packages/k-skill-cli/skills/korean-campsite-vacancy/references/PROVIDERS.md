@@ -84,6 +84,65 @@
 
 ---
 
+## transport: `thankq`
+
+**땡큐캠핑(ThankQ Camping)** 은 민간 상용 예약 플랫폼이다. 자체 예약 시스템을 만들지 않는 지자체가 여기에 입점해 운영하는 경우가 있다.
+
+> **플랫폼이 민간인 것과 캠핑장이 민간인 것은 다르다.** 이 레지스트리의 기준은 **운영기관**이다. 자라섬캠핑장은 가평군시설관리공단이 운영하므로 대상이고, 같은 플랫폼의 사설 캠핑장은 대상이 아니다. dzSmart도 denobiz라는 민간 업체 제품이라는 점에서 사정이 같다.
+
+### 식별 방법
+
+지자체 홈페이지의 예약 버튼이 `thankqcamping.com`으로 나가면 이 어댑터를 재사용할 수 있다. 캠핑장별 식별자는 예약 상세 URL의 `cseq` 값이다.
+
+```
+https://m.thankqcamping.com/resv/view.hbb?cseq=1     ← 자라섬 = 1
+```
+
+### 데이터 흐름 (2026-08-29 확인)
+
+dzSmart와 달리 **브라우저가 필요 없다.** 평범한 form POST 하나로 끝난다.
+
+```
+POST https://m.thankqcamping.com/resv/axResCampSite.hbb
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+
+campseq=1&res_dt=20260905&res_edt=20260905&res_days=1&site_tp=&only_able_yn=
+```
+
+- `res_dt` / `res_edt` 는 **`YYYYMMDD`** 다. `2026-09-05` 처럼 보내면 `500`이 돌아온다
+- 하루치를 볼 때 `res_dt` 와 `res_edt` 는 같은 값이고 `res_days=1` 이다 (사이트 자체 기본 동작)
+- 월 단위 조회 화면이 없다. 그래서 어댑터는 **날짜당 1회** 요청한다
+
+응답은 JSON이 아니라 사이트 목록 HTML 조각이다.
+
+### 파싱 대상 DOM
+
+```html
+<div class="site_div type2" onClick="goNoMemResAlert('113092','');">
+  <span class="q_tip og">예약가능 <em>34</em></span>
+  <p class="na">사이트 A</p>
+  <p class="pri">45,000원</p>
+</div>
+```
+
+- `span.q_tip` 의 클래스가 상태를 결정한다
+  - `og` → 예약가능, `<em>` 안의 숫자가 잔여 면수
+  - 클래스 없음 → `예약완료`
+  - `red` → `예약불가`
+- `p.na` = 존 이름, `p.pri` = 요금 (주말·주중이 다르다)
+
+### 주의: 주석 처리된 중복 블록
+
+응답에는 존마다 **구버전 마크업이 `<!--li> ... </li-->` 로 주석 처리되어 함께** 들어온다. 그대로 파싱하면 모든 존이 두 번 잡힌다. `parse_thankq_html` 은 주석을 먼저 제거한 뒤 `site_div` 단위로 나눈다.
+
+### 등록된 사이트
+
+| provider id | cseq | 캠핑장 | 운영기관 | 확인 |
+| --- | --- | --- | --- | --- |
+| `thankq-jaraseom` | 1 | 자라섬캠핑장 | 가평군시설관리공단 | 라이브 확인 완료 |
+
+---
+
 ## transport: `delegate`
 
 다른 스킬이 이미 담당하는 시스템이다. 레지스트리에는 **사용자를 올바른 스킬로 보내기 위해** 남긴다.
@@ -100,5 +159,6 @@
 2. 예약 페이지 HTML에서 `/dzSmart/plugins/Reserv/`를 찾는다. 있으면 `PROVIDERS`에 항목만 추가하면 끝이다.
 3. 다른 시스템이면 새 transport 함수를 만들고, `parse_*_html`을 **순수 함수**로 분리해 브라우저 없이 테스트 가능하게 둔다.
 4. `tests/fixtures/`에 실제 캡처를 저장하고 파서 테스트를 추가한다.
-5. 로그인·캡차·본인인증이 필요하면 **조회 경로로 넣지 말고** `delegate`로 표시하거나 아예 넣지 않는다.
-6. `npm run generate:skill-stubs && npm run migrate:cli-assets && npm run sync:cli-skills && npm run ci`
+5. **운영기관이 공공인지 먼저 확인한다.** 민간 플랫폼에 입점했어도 운영 주체가 지자체·공단·공사면 대상이고, 사설 캠핑장은 대상이 아니다.
+6. 로그인·캡차·본인인증이 필요하면 **조회 경로로 넣지 말고** `delegate`로 표시하거나 아예 넣지 않는다.
+7. `npm run generate:skill-stubs && npm run migrate:cli-assets && npm run sync:cli-skills && npm run ci`
