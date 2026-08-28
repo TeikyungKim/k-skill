@@ -23,9 +23,9 @@ Runtime mode: dolshoi (CloakBrowser available)
 
 ## What this skill does
 
-숲나들e 공식 사이트(`https://foresttrip.go.kr/index.jsp`)에서 자연휴양림 예약 가능 객실을 날짜 기준으로 조회 자동화한다.
+숲나들e 공식 사이트(`https://foresttrip.go.kr/index.jsp`)에서 자연휴양림 예약 가능 객실을 날짜 기준으로 조회한다.
 
-generic runtime에서 helper는 조회 전용이다. 돌쇠에서는 조회 결과를 공식 CloakBrowser 예약 흐름으로 이어가며, CAPTCHA·대기열 우회·공격적 반복 스나이핑은 여전히 하지 않는다.
+사용자가 명시적으로 예약 준비를 요청하면 조회 결과를 공식 예약 화면으로 이어간다. 돌쇠에서는 CloakBrowser를 우선하고, generic runtime에서는 Python 예외 helper가 소유한 보이는 Playwright 브라우저를 열어 정확한 시설을 선택한다. CAPTCHA·약관 동의·예약 제출·결제는 자동화하지 않는다.
 
 ## When to use
 
@@ -33,10 +33,11 @@ generic runtime에서 helper는 조회 전용이다. 돌쇠에서는 조회 결�
 - "숲나들e 2026년 5월 4일 예약 가능한 곳 조회해줘"
 - "자연휴양림 빈자리 전체 조회해줘"
 - "관심 휴양림 중 예약 가능한 객실만 알려줘"
+- "이 객실로 결제 직전 화면까지 열어줘"
 
 ## When not to use
 
-- 돌쇠가 아니며 예약 신청이나 결제까지 자동화해야 하는 경우
+- CAPTCHA 입력, 약관 동의, 예약 제출 또는 결제를 자동화해야 하는 경우
 - 캡차를 풀거나 대기열을 우회해야 하는 경우
 - 계정 정보를 채팅창에 직접 넣으려는 경우
 - aggressive polling, 스나이핑, 반복 예약 시도가 필요한 경우
@@ -66,6 +67,7 @@ Optional:
 - 돌쇠 credential mode에서는 `vault-run` capability를 사용하고, 없으면 `request_vault_credential`을 호출한다. ID/PW 원문을 채팅이나 shell에 넣지 않는다.
 - 그 밖의 환경에서는 이미 주입된 환경변수 → host vault → `~/.config/k-skill/secrets.env` 순서로 사용한다.
 - Generic helper 자체는 `KSKILL_FORESTTRIP_ID`, `KSKILL_FORESTTRIP_PASSWORD` 환경변수만 읽는다.
+- 브라우저 예약 helper는 이미 주입된 환경변수를 우선하고, 없을 때만 `~/.config/k-skill/secrets.env`를 읽는다. 계정을 shell 인자로 받거나 출력하지 않는다.
 
 ## Inputs
 
@@ -85,6 +87,12 @@ Optional:
   - `--week-range N`: `--dates` 를 생략했을 때만 오늘부터 N주 범위를 조회
   - `--concurrency N`: 병렬 조회 worker 수, 1-5 범위
   - `--session-cache PATH`: 로그인 세션 캐시 경로 override
+- 브라우저 예약 준비:
+  - `--forest-id`: 공식 `hmpgId`/`insttId`
+  - `--check-in`, `--check-out`: `YYYYMMDD`
+  - `--facility-type` 또는 `--facility-code`: 화면의 상품 유형
+  - `--room-name`: 최신 조회 결과의 정확한 객실/사이트명
+  - `--browser-channel`: helper가 소유할 `chromium`(기본), `chrome`, `msedge`
 
 ## Workflow
 
@@ -149,13 +157,37 @@ npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/run_foresttrip_vacan
 
 `goodsNm`에 "예비"가 포함된 객실은 운영자가 보유하는 내부용 자리로, 사용자 예약 화면에는 노출되지 않는다. helper는 이 객실들을 결과에서 자동 제외한다. 같은 `(휴양림, 날짜, 객실명)` 조합의 중복 행도 dedup된다.
 
+### 5. Open the visible booking handoff only on explicit request
+
+먼저 전 숙박일에 같은 객실/사이트가 연속으로 비어 있는지 read-only helper로 다시 확인한다. 그 다음 브라우저 운영 절차를 읽는다.
+
+```bash
+npx -y @nomadamas/k-skill@0 read foresttrip-vacancy references/browser-booking.md
+```
+
+generic runtime에서 정확한 시설을 공식 화면에 선택하는 예시:
+
+```bash
+npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/prepare_foresttrip_booking.py -- \
+  --forest-id ID02030054 \
+  --check-in 20260906 \
+  --check-out 20260907 \
+  --facility-type "국민여가오토캠핑장" \
+  --room-name "데크 01"
+```
+
+이 Python 스킬은 저장소의 browser-runtime 예외다. helper는 사용자 브라우저나 기존 profile을 닫지 않고 자신이 소유한 보이는 브라우저만 연다. 공식 `fn_goRsvt()`와 NetFunnel 대기열을 그대로 사용하고, 정확한 객실명이 하나의 상품과 일치할 때만 선택한다.
+
+`자동예약 방지숫자`와 약관 동의 화면에서 자동화를 멈춘다. 사용자가 내용을 확인하고 CAPTCHA·동의·`예약` 제출을 직접 완료하면 helper는 결제 화면을 감지해 열린 상태로 유지한다. 결제 컨트롤은 누르지 않는다.
+
 ## Done when
 
 - 요청 날짜와 조회 범위가 명확하다.
 - read-only 월별예약조회 helper를 최소 1회 실행했다.
 - 빈 객실이 있으면 날짜/휴양림/객실을 정리했다.
 - 빈 객실이 없으면 없다고 명확히 말했다.
-- 돌쇠의 예약 요청이면 공식 예약 흐름을 진행했고, 결제가 필요하면 `clarify` 승인 후 완료 상태를 확인했다.
+- 예약 준비 요청이면 공식 브라우저에서 정확한 시설을 선택하고 CAPTCHA/약관 수동 단계까지 열었다.
+- 사용자가 직접 예약을 제출해 결제 화면에 도달한 경우 자동화가 멈춘 상태로 화면을 유지했다.
 - CAPTCHA/대기열 우회는 시도하지 않았다.
 
 ## Failure modes
@@ -166,6 +198,10 @@ npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/run_foresttrip_vacan
 - 숲나들e 표면 변경: helper의 login/session bootstrap 또는 parser 점검 필요
 - "(예비)" 객실이 결과에 안 나옴: 정상 동작이다. 사용자 예약 화면에 노출되지 않는 운영자 보유분이라 의도적으로 제외된다.
 - 사용자 화면 객실 수와 helper 결과가 다름: 같은 객실의 중복 행이 dedup되었거나, 요청 범위 밖 `useDt`가 제거됐을 가능성이 높다. raw API 응답을 확인하려면 helper 로직을 우회해서 직접 호출 필요.
+- 브라우저 helper에서 객실명 중복: 임의 선택하지 말고 전체 객실명을 더 정확하게 지정
+- 공식 대기열 timeout: 우회하지 말고 열린 브라우저에서 기다리거나 종료
+- CAPTCHA/약관 화면: 정상 수동 인계이며 helper가 입력하거나 체크하지 않음
+- 화면 변경: `SAFE_STOP`과 query string이 제거된 공식 URL을 보고하고, payment endpoint를 추측해 호출하지 않음
 
 ## Maintainer review notes
 
@@ -175,14 +211,18 @@ npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/run_foresttrip_vacan
 
 - `./scripts/validate-skills.sh`
 - `python3 -m py_compile foresttrip-vacancy/scripts/run_foresttrip_vacancy.py`
+- `python3 -m py_compile foresttrip-vacancy/scripts/prepare_foresttrip_booking.py`
+- `python3 foresttrip-vacancy/tests/test_prepare_foresttrip_booking.py`
 - `npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/run_foresttrip_vacancy.py -- --help`
 - `npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/run_foresttrip_vacancy.py -- --check-deps`
+- `npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/prepare_foresttrip_booking.py -- --check-deps`
 - `npm run ci`
 
 실제 live smoke는 기여자 또는 이미 숲나들e 계정을 가진 사용자가 선택적으로 수행한다. PR에는 `forests_scanned`, `fetch_failures`, `filter_hits` 같은 비민감 요약만 남기고 계정 정보, 세션 쿠키, 개인 조회 세부 내역은 공유하지 않는다.
 
 ## Safety notes
 
-- generic helper는 조회 전용이고, 돌쇠의 예약/결제는 CloakBrowser action path로 분리한다.
+- 조회 helper는 read-only다. 브라우저 helper는 명시적인 요청에서만 정확한 시설 선택까지 진행한다.
+- 브라우저 helper에는 CAPTCHA 입력, 약관 동의, 예약 제출, 결제 클릭 코드가 없다.
 - 캡차 처리, 대기열 우회, 공격적인 반복 조회를 하지 않는다.
 - 돌쇠에서는 vault action을 사용하고, generic fallback에서만 환경변수 또는 `~/.config/k-skill/secrets.env`를 사용한다.

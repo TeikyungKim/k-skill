@@ -1,11 +1,11 @@
 ---
 name: foresttrip-vacancy
-description: Look up available Korean national forest recreation lodging or camping slots on foresttrip.go.kr and, in Dolshoi, continue into the official booking flow with approval-gated payment.
+description: Look up Korean ForestTrip lodging or camping vacancies and, when explicitly requested, open a visible official booking session with an exact facility selected, pausing at CAPTCHA and stopping before payment.
 license: MIT
 metadata:
   category: travel
   locale: ko-KR
-  phase: v1.5
+  phase: v1.6
 ---
 
 # foresttrip-vacancy
