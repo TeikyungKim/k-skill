@@ -44,6 +44,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 | 고속버스 예매 | `express-bus-booking` | KOBUS 배차·좌석·요금·임시 선점 조회와 예매 지원 | 필요 | [고속버스 예매 가이드](docs/features/express-bus-booking.md) |
 | 시외버스 예매 | `intercity-bus-booking` | 티머니 배차·좌석·요금·임시 선점 조회와 예매 지원 | 필요 | [시외버스 예매 가이드](docs/features/intercity-bus-booking.md) |
 | 자연휴양림 빈 객실 조회 | `foresttrip-vacancy` | 공식 숲나들e 빈 객실 조회와 예약 지원 | 필요 | [자연휴양림 빈 객실 조회 가이드](docs/features/foresttrip-vacancy.md) |
+| 지자체 캠핑장 빈자리 조회 | `korean-campsite-vacancy` | 연곡해변 솔향기·강릉바다내음 등 지자체 캠핑장의 날짜별 존 잔여 면수 조회 (provider adapter 방식, 조회 전용) | 불필요 | [지자체 캠핑장 빈자리 조회 가이드](docs/features/korean-campsite-vacancy.md) |
 | 카카오톡 Mac 아카이브 검색 | `kakaotalk-mac` | `katok`으로 macOS 카카오톡 로컬 아카이브를 동기화하고 keyword/BM25/semantic 검색 | 불필요(로컬 앱/권한 필요) | [카카오톡 Mac 아카이브 검색](docs/features/kakaotalk-mac.md) |
 | 서울 지하철 도착정보 조회 | `seoul-subway-arrival` | 서울 지하철 역 기준 실시간 도착 예정 열차 확인 | 불필요 | [서울 지하철 도착정보 가이드](docs/features/seoul-subway-arrival.md) |
 | 서울 실시간 혼잡도 조회 | `seoul-density` | 서울 주요 121개 핫스팟의 실시간 혼잡도 단계와 추정 인구 조회 | 불필요 | [서울 실시간 혼잡도 가이드](docs/features/seoul-density.md) |
@@ -198,6 +199,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 - [고속버스 예매](docs/features/express-bus-booking.md)
 - [시외버스 예매](docs/features/intercity-bus-booking.md)
 - [자연휴양림 빈 객실 조회](docs/features/foresttrip-vacancy.md)
+- [지자체 캠핑장 빈자리 조회](docs/features/korean-campsite-vacancy.md)
 - [카카오톡 Mac 아카이브 검색](docs/features/kakaotalk-mac.md)
 - [서울 지하철 도착정보 조회](docs/features/seoul-subway-arrival.md)
 - [서울 실시간 혼잡도 조회](docs/features/seoul-density.md)

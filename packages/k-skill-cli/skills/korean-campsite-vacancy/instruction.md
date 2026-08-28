@@ -1,0 +1,177 @@
+# Korean Campsite Vacancy
+
+## What this skill does
+
+지자체·공공기관이 운영하는 한국 캠핑장의 **빈자리(잔여 면수)를 날짜 기준으로 조회**한다.
+
+전국 지자체 캠핑장의 실시간 빈자리를 통합 제공하는 공식 API는 존재하지 않는다. 운영기관마다 예약 시스템이 다르므로 이 스킬은 **provider adapter 레지스트리**를 두고 시스템 단위로 어댑터를 늘려 나간다.
+
+조회 전용이다. 로그인, 예약 버튼 클릭, 결제, 캡차·본인인증 처리는 하지 않는다.
+
+## When to use
+
+- "연곡 솔향기 캠핑장 이번 주말 자리 있어?"
+- "강릉 바다내음 캠핑장 9월 첫째 주 빈자리 알려줘"
+- "글램핑 남은 데 있나 확인해줘"
+- "지자체 캠핑장 빈자리 조회 로직을 나중에 더 붙일 수 있게 정리해줘"
+
+## When not to use
+
+- 예약 신청·결제까지 자동화해야 하는 경우 (캡차·SMS 본인인증 구간이다)
+- 국립자연휴양림 조회 → `foresttrip-vacancy` 스킬을 쓴다
+- 국립공원 야영장 조회 → 별도 시스템(`reservation.knps.or.kr`)이며 아직 어댑터가 없다
+- 사설(민간) 캠핑장 조회 → 레지스트리에 없다
+- 취소표 스나이핑, 반복 폴링
+
+## Prerequisites
+
+- Python 3.9+
+- Playwright Chromium browser
+
+```bash
+python3 -m pip install playwright
+python3 -m playwright install chromium
+npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_vacancy.py -- --check-deps
+```
+
+## Required environment variables
+
+- 없음. 레지스트리에 등록된 조회 경로는 전부 **로그인·API 키 불필요**하다.
+
+## Provider adapter rule
+
+이 스킬은 예약 시스템별 로직을 **provider adapter** 단위로 나눈다. `delivery-tracking`의 carrier adapter 규칙과 같은 구조다.
+
+새 캠핑장을 붙일 때는 아래 필드를 먼저 정한다.
+
+- `provider id`: 예) `gtdc-yeongok`
+- `운영기관`: 실제 운영 주체
+- `entrypoint`: 공식 예약 진입 URL
+- `transport`: 데이터를 어떻게 얻는지 (`dzsmart` 페이지 파싱 / JSON API / `delegate`)
+- `zone 모델`: 존·사이트 구분 방식
+- `date 모델`: 날짜가 어디에 인코딩되는지
+- `parser`: 잔여 면수를 어느 필드에서 뽑는지
+- `로그인 필요 여부`
+- `rate limit`: 호출 간격과 월 조회 상한
+
+현재 레지스트리는 아래와 같다. 자세한 근거는 `npx -y @nomadamas/k-skill@0 read korean-campsite-vacancy references/PROVIDERS.md`를 읽는다.
+
+| provider id | 대상 | 운영기관 | transport | 로그인 |
+| --- | --- | --- | --- | --- |
+| `gtdc-yeongok` | 연곡해변 솔향기캠핑장 | 강릉관광개발공사 | `dzsmart` | 불필요 |
+| `gtdc-badanaeum` | 강릉바다내음캠핑장 | 강릉관광개발공사 | `dzsmart` | 불필요 |
+| `gtdc-ojuk` | 강릉오죽한옥마을(숙박) | 강릉관광개발공사 | `dzsmart` | 불필요 |
+| `foresttrip` | 국립자연휴양림 | 산림청 | `delegate` | 필요 |
+
+`foresttrip`은 조회 경로가 아니라 **위임 표시**다. 이 provider를 지정하면 helper는 `foresttrip-vacancy` 스킬을 쓰라는 오류를 낸다.
+
+## Inputs
+
+- 날짜: `--dates YYYYMMDD` 또는 comma-separated `YYYYMMDD,YYYYMMDD`
+- 날짜를 생략하면 `--day-range N`(기본 7)로 오늘부터 N일을 조회한다
+- 조회 범위: `--provider gtdc-yeongok` (comma-separated, 생략 시 위임이 아닌 provider 전체)
+- 선택 필터:
+  - `--zone 글램핑`: 존 이름 부분 일치
+  - `--include-full`: 마감된 존까지 표시 (기본은 예약 가능한 존만)
+- 출력: `--text` 사람용 요약 / `--json` 구조화 결과(기본)
+
+## Workflow
+
+### 1. Confirm the target campground is in the registry
+
+```bash
+npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_vacancy.py -- --list-providers
+```
+
+레지스트리에 없는 캠핑장이면 **추측해서 조회하지 않는다.** 없다고 말하고, 필요하면 어댑터 추가가 필요하다고 안내한다.
+
+### 2. Install runtime dependencies when missing
+
+```bash
+python3 -m pip install playwright
+python3 -m playwright install chromium
+```
+
+### 3. Run a vacancy lookup
+
+특정 캠핑장의 특정 날짜:
+
+```bash
+npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_vacancy.py -- \
+  --provider gtdc-yeongok --dates 20260905,20260906 --text
+```
+
+등록된 캠핑장 전체를 이번 주 기준으로:
+
+```bash
+npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_vacancy.py -- \
+  --day-range 7 --text
+```
+
+글램핑만, 마감 포함:
+
+```bash
+npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_vacancy.py -- \
+  --provider gtdc-yeongok --dates 20260905 --zone 글램핑 --include-full --json
+```
+
+### 4. Summarize results conservatively
+
+- 조회 날짜와 캠핑장명
+- 존별 잔여 면수 (마감이면 마감이라고 쓴다)
+- 시즌 구분(성수기/준성수기/비수기)이 있으면 요금 판단에 영향을 주므로 함께 전달
+- `fetch_failures`가 0이 아니면 실패한 provider와 월을 함께 보고
+
+빈자리가 없으면 **"조회 시점 기준 예약 가능 사이트 없음"** 이라고 명확히 말한다. 잔여 면수는 실시간으로 바뀌므로 실제 예약 화면에서 재확인될 수 있음을 덧붙인다.
+
+### 5. Hand off to the official booking page
+
+예약을 원하면 공식 예약 페이지 URL을 그대로 안내한다.
+
+```
+https://camping.gtdc.or.kr/pub/reserv.do
+```
+
+이 구간에는 캡차와 SMS 본인인증이 걸려 있다(`sets.captcha=true`, `sets.smsauth=true`). 대신 통과하지 않는다.
+
+## Done when
+
+- 대상 캠핑장이 레지스트리에 있는지 확인했다.
+- 조회 helper를 최소 1회 실행했다.
+- 빈자리가 있으면 날짜/캠핑장/존/잔여 면수를 정리했다.
+- 빈자리가 없으면 없다고 명확히 말했다.
+- 레지스트리에 없는 캠핑장을 임의 URL로 추측 조회하지 않았다.
+- 캡차·본인인증·결제 구간은 사용자에게 넘겼다.
+
+## Failure modes
+
+- Playwright 미설치: `python3 -m pip install playwright && python3 -m playwright install chromium`
+- `wait_for_selector` timeout: 예약 시스템 점검 중이거나 해당 월이 아직 오픈 전이다. 월을 바꿔 재확인하고, 그래도 비면 "해당 월 예약 미오픈"으로 보고한다
+- 결과가 전부 마감: 정상 동작이다. 성수기 주말은 대부분 마감이다
+- 존 이름이 바뀜: dzSmart 존 구성은 운영기관이 시즌마다 바꾼다. `--include-full`로 원본 존 목록을 먼저 확인한다
+- 파서가 0건 반환: 사이트가 dzSmart 렌더링 구조를 바꿨을 가능성이 높다. `tests/fixtures/gtdc_yeongok_202608.html`와 실제 DOM을 비교해 `parse_month_html`을 점검한다
+- 월 조회 상한 초과: 요청 날짜가 6개월을 넘게 걸쳐 있다. 날짜를 나눠 조회한다
+
+## Rate limit
+
+- 한 번의 조회는 provider × 월 단위로 페이지를 1회씩만 연다.
+- 취소표를 노린 반복 폴링을 하지 않는다. 사용자가 반복 확인을 원하면 공식 알림 기능을 안내한다.
+
+## Maintainer review notes
+
+계정 없이 가능한 검증:
+
+- `./scripts/validate-skills.sh`
+- `python3 -m py_compile korean-campsite-vacancy/scripts/run_campsite_vacancy.py`
+- `python3 -m unittest discover -s korean-campsite-vacancy/tests -p "test_*.py"`
+- `npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_vacancy.py -- --list-providers`
+- `npm run ci`
+
+파서 테스트는 `tests/fixtures/`의 실제 캡처 HTML로 돌기 때문에 브라우저 없이 통과한다. live smoke는 Playwright가 설치된 환경에서 선택적으로 수행한다.
+
+## Safety notes
+
+- 조회 전용이다. 예약 폼 제출, 결제, 좌석 선점을 하지 않는다.
+- 캡차·SMS 본인인증을 대신 처리하지 않는다.
+- 레지스트리에 없는 사이트를 URL 패턴으로 추측해 조회하지 않는다.
+- 공개 예약 화면이 노출하는 잔여 수만 읽고, 개인 예약 내역 조회 화면에는 접근하지 않는다.

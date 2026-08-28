@@ -1,0 +1,9 @@
+{
+  "name": "korean-campsite-vacancy",
+  "description": "Look up vacancy at Korean municipal and public campgrounds (연곡해변·강릉바다내음 등) through a provider adapter registry, and point at foresttrip-vacancy for 국립자연휴양림. Read-only.",
+  "profiles": [
+    "browser",
+    "lookup"
+  ],
+  "frontmatter": "name: korean-campsite-vacancy\ndescription: Look up vacancy at Korean municipal and public campgrounds (연곡해변·강릉바다내음 등) through a provider adapter registry, and point at foresttrip-vacancy for 국립자연휴양림. Read-only.\nlicense: MIT\nmetadata:\n  category: travel\n  locale: ko-KR\n  phase: v1"
+}
