@@ -358,6 +358,28 @@ DONGHAE_DETAIL_PATH = "/user/reservation/ND_selectFcltyCalendarDetail.do"
 DONGHAE_ROW_SEP = "|^|"
 DONGHAE_NOPASS = "NOPASS:"
 
+# Calendar cell labels on BD_reservation.do, and what they mean for a lookup.
+# An empty label is the important one: the booking window has not opened yet, so
+# the detail endpoint still answers with the site's FULL CAPACITY. Reporting that
+# as vacancy is wrong — nobody can have booked it.
+DONGHAE_LABEL_STATUS = {
+    "예약현황보기": "open",
+    "예약마감": "full",
+    "예약종료": "closed",
+    "": "not_open",
+}
+STATUS_NOTE = {
+    "open": None,
+    "full": "예약 마감된 날짜다",
+    "closed": "예약이 종료된 날짜다 (지난 날짜이거나 접수 종료)",
+    "not_open": "예약창이 아직 열리지 않았다. 아래 숫자는 잔여가 아니라 총 정원이다",
+}
+
+
+def classify_donghae_label(label: str) -> str:
+    """Map a calendar cell label to a booking status. Unknown labels are not assumed open."""
+    return DONGHAE_LABEL_STATUS.get((label or "").strip(), "unknown")
+
 
 def parse_donghae_value(value: str) -> list[dict[str, Any]]:
     """Parse the packed `이름:잔여수|^|이름:예약완료` payload into zone records.
@@ -405,6 +427,36 @@ def require_credentials(provider: Provider) -> tuple[str, str]:
     return user, password
 
 
+DONGHAE_CELLS_JS = r"""
+() => [...document.querySelectorAll('td')].map(td => {
+    const lines = (td.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (!lines.length) return null;
+    if (!/^[0-9]+$/.test(lines[0])) return null;
+    return { day: lines[0], label: lines[1] || '' };
+}).filter(Boolean)
+"""
+
+DONGHAE_DETAIL_JS = """
+async ({path, trrsrtCode, year, month, day}) => {
+    const key = sessionStorage.getItem('dhscamp_pass_RESV1') || '';
+    const nf = sessionStorage.getItem('dhscamp_pass_netfunnelt') || '0';
+    const body = new URLSearchParams({
+        trrsrtCode, q_year: year, q_month: month, qDay: day,
+        passResv1: key, passNfTime: nf,
+    });
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        body,
+    });
+    return await res.text();
+}
+"""
+
+
 def fetch_donghae_days(
     entrypoint: str,
     trrsrt_code: str,
@@ -413,8 +465,13 @@ def fetch_donghae_days(
     user: str,
     password: str,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
-) -> dict[str, str]:
-    """Log in once, then read the read-only facility calendar for each date."""
+) -> dict[str, dict[str, str]]:
+    """Log in once, then read each requested month's calendar and day detail.
+
+    Returns ``{use_dt: {"value": packed, "status": booking_status}}``. The status
+    comes from the month calendar, never inferred, so an unopened date is never
+    reported as vacancy.
+    """
     try:
         from playwright.sync_api import Error as PlaywrightError  # type: ignore[reportMissingImports]
         from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
@@ -425,7 +482,7 @@ def fetch_donghae_days(
         ) from exc
 
     base = entrypoint.rstrip("/")
-    values: dict[str, str] = {}
+    out: dict[str, dict[str, str]] = {}
 
     with sync_playwright() as p:
         try:
@@ -443,57 +500,54 @@ def fetch_donghae_days(
             page.keyboard.press("Enter")
             page.wait_for_load_state("networkidle", timeout=timeout_ms)
 
-            page.goto(base + DONGHAE_RESERVE_PATH, timeout=timeout_ms)
-            page.wait_for_load_state("networkidle", timeout=timeout_ms)
-
-            if "loginForm" in page.url:
-                raise SystemExit("donghae login failed; check the id/password")
-
-            for use_dt in dates:
-                payload = page.evaluate(
-                    """async ({path, trrsrtCode, year, month, day}) => {
-                        const key = sessionStorage.getItem('dhscamp_pass_RESV1') || '';
-                        const nf = sessionStorage.getItem('dhscamp_pass_netfunnelt') || '0';
-                        const body = new URLSearchParams({
-                            trrsrtCode, q_year: year, q_month: month, qDay: day,
-                            passResv1: key, passNfTime: nf,
-                        });
-                        const res = await fetch(path, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                                'X-Requested-With': 'XMLHttpRequest',
-                            },
-                            body,
-                        });
-                        return await res.text();
-                    }""",
-                    {
-                        "path": DONGHAE_DETAIL_PATH,
-                        "trrsrtCode": trrsrt_code,
-                        "year": use_dt[:4],
-                        "month": use_dt[4:6],
-                        "day": str(int(use_dt[6:8])),
-                    },
+            for month in months_for(dates):
+                year, mm = month[:4], month[4:6]
+                page.goto(
+                    f"{base}{DONGHAE_RESERVE_PATH}?q_year={year}&q_month={mm}",
+                    timeout=timeout_ms,
                 )
-                try:
-                    parsed = json.loads(payload)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError(f"unexpected donghae response for {use_dt}") from exc
+                page.wait_for_load_state("networkidle", timeout=timeout_ms)
+                if "loginForm" in page.url:
+                    raise SystemExit("donghae login failed; check the id/password")
 
-                value = parsed.get("value") or ""
-                if isinstance(value, str) and value.startswith(DONGHAE_NOPASS):
-                    raise RuntimeError(
-                        "donghae refused the page-issued pass key; the site flow changed. "
-                        "This adapter does not solve the booking CAPTCHA."
+                cells = page.evaluate(DONGHAE_CELLS_JS)
+                statuses = {
+                    f"{month}{int(cell['day']):02d}": classify_donghae_label(cell["label"])
+                    for cell in cells
+                }
+
+                for use_dt in dates:
+                    if not use_dt.startswith(month):
+                        continue
+                    status = statuses.get(use_dt, "unknown")
+                    payload = page.evaluate(
+                        DONGHAE_DETAIL_JS,
+                        {
+                            "path": DONGHAE_DETAIL_PATH,
+                            "trrsrtCode": trrsrt_code,
+                            "year": year,
+                            "month": mm,
+                            "day": str(int(use_dt[6:8])),
+                        },
                     )
-                if parsed.get("result") is not True:
-                    continue
-                values[use_dt] = value
+                    try:
+                        parsed = json.loads(payload)
+                    except json.JSONDecodeError as exc:
+                        raise RuntimeError(f"unexpected donghae response for {use_dt}") from exc
+
+                    value = parsed.get("value") or ""
+                    if isinstance(value, str) and value.startswith(DONGHAE_NOPASS):
+                        raise RuntimeError(
+                            "donghae refused the page-issued pass key; the site flow changed. "
+                            "This adapter does not solve the booking CAPTCHA."
+                        )
+                    if parsed.get("result") is not True:
+                        continue
+                    out[use_dt] = {"value": value, "status": status}
         finally:
             browser.close()
 
-    return values
+    return out
 
 
 def check_dependencies(*, launch_browser: bool = True) -> None:
@@ -602,6 +656,7 @@ def collect_dzsmart(
                 days[day["use_dt"]] = {
                     "use_dt": day["use_dt"],
                     "season": day["season"],
+                    "booking_status": "open",
                     "zones": day["zones"],
                 }
 
@@ -660,10 +715,15 @@ def collect_donghae(
         )
         return days, failures
 
-    for use_dt, value in values.items():
-        zones = parse_donghae_value(value)
+    for use_dt, entry in values.items():
+        zones = parse_donghae_value(entry["value"])
         if zones:
-            days[use_dt] = {"use_dt": use_dt, "season": None, "zones": zones}
+            days[use_dt] = {
+                "use_dt": use_dt,
+                "season": None,
+                "booking_status": entry.get("status", "unknown"),
+                "zones": zones,
+            }
 
     return days, failures
 
@@ -714,16 +774,29 @@ def collect_results(
 
         kept: dict[str, dict[str, Any]] = {}
         for use_dt, day in day_rows.items():
+            status = day.get("booking_status", "open")
+            bookable_day = status == "open"
             zones = day["zones"]
             if zone_filter:
                 needle = zone_filter.lower()
                 zones = [zone for zone in zones if needle in zone["zone"].lower()]
-            if not include_full:
+            if not bookable_day:
+                # Counts on a non-open day are capacity, not vacancy. Never let them
+                # read as bookable, and never hide the day either — the user asked
+                # about it and deserves the reason.
+                zones = [{**zone, "available": False} for zone in zones]
+            elif not include_full:
                 zones = [zone for zone in zones if zone["available"]]
             if not zones:
                 continue
             hits += sum(1 for zone in zones if zone["available"])
-            kept[use_dt] = {"use_dt": use_dt, "season": day["season"], "zones": zones}
+            kept[use_dt] = {
+                "use_dt": use_dt,
+                "season": day["season"],
+                "booking_status": status,
+                "status_note": STATUS_NOTE.get(status),
+                "zones": zones,
+            }
 
         if kept:
             results.append(
@@ -777,13 +850,17 @@ def print_text(payload: dict[str, Any]) -> None:
         print(f"\n{site['name']}  ({site['operator']})")
         for day in site["dates"]:
             season = f" [{day['season']}]" if day["season"] else ""
+            status = day.get("booking_status", "open")
             print(f"  {day['use_dt']}{season}")
+            if status != "open":
+                note = day.get("status_note") or f"예약 상태: {status}"
+                print(f"    ! {note}")
             for zone in day["zones"]:
                 remaining = "마감" if zone["remaining"] is None else f"{zone['remaining']}면"
                 price = f" / {zone['price']}" if zone.get("price") else ""
                 print(f"    - {zone['zone']} / {remaining}{price}")
     for failure in payload["failures"]:
-        print(f"\n! fetch failed: {failure['provider']} {failure['month']} — {failure['error']}")
+        print(f"\n! fetch failed: {failure['provider']} {failure['scope']} — {failure['error']}")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

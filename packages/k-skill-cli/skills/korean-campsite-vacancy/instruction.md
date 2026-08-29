@@ -137,6 +137,7 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 - 존별 잔여 면수 (마감이면 마감이라고 쓴다)
 - 시즌 구분(성수기/준성수기/비수기)이 있으면 요금 판단에 영향을 주므로 함께 전달
 - 요금이 함께 오면(`thankq`) 같이 전달한다. 주말·주중 요금이 다르다
+- **`booking_status`가 `open`이 아니면 그 사실을 먼저 말한다.** 특히 `not_open`은 예약창이 안 열린 날이라 숫자가 잔여가 아니라 **총 정원**이다. 이걸 빈자리처럼 전달하지 않는다
 - `fetch_failures`가 0이 아니면 실패한 provider와 실패 범위(`scope`)를 함께 보고
 
 빈자리가 없으면 **"조회 시점 기준 예약 가능 사이트 없음"** 이라고 명확히 말한다. 잔여 면수는 실시간으로 바뀌므로 실제 예약 화면에서 재확인될 수 있음을 덧붙인다.
@@ -167,6 +168,8 @@ https://camping.gtdc.or.kr/pub/reserv.do
 - `donghae` credential 누락: `KSKILL_DONGHAE_ID` / `KSKILL_DONGHAE_PASSWORD` 확인. 값이 `replace-me`면 미설정으로 처리된다
 - `donghae` 로그인 실패: 아이디/비밀번호를 확인한다. 대신 캡차를 풀지 않는다
 - `donghae` NOPASS 응답: 사이트 흐름이 바뀐 것이다. **캡차를 우회하지 말고** 실패로 보고한다
+- 미래 날짜인데 모든 시설이 만석으로 나옴: `booking_status: not_open`인지 확인한다. 동해시는 이용일 **30일 전 오전 11시**에 예약창을 연다. 그 전에는 총 정원이 그대로 조회된다
+- `booking_status: unknown`: 달력 라벨이 바뀐 것이다. 예약 가능으로 단정하지 말고 사용자에게 공식 화면 확인을 안내한다
 - `wait_for_selector` timeout: 예약 시스템 점검 중이거나 해당 월이 아직 오픈 전이다. 월을 바꿔 재확인하고, 그래도 비면 "해당 월 예약 미오픈"으로 보고한다
 - 결과가 전부 마감: 정상 동작이다. 성수기 주말은 대부분 마감이다
 - 존 이름이 바뀜: dzSmart 존 구성은 운영기관이 시즌마다 바꾼다. `--include-full`로 원본 존 목록을 먼저 확인한다

@@ -323,7 +323,12 @@ DONGHAE_VALUE = (
 
 def donghae_fetcher(_entrypoint, _code, dates, *, user, password):
     assert user and password
-    return {use_dt: DONGHAE_VALUE for use_dt in dates}
+    return {use_dt: {"value": DONGHAE_VALUE, "status": "open"} for use_dt in dates}
+
+
+def donghae_not_open_fetcher(_entrypoint, _code, dates, *, user, password):
+    assert user and password
+    return {use_dt: {"value": DONGHAE_VALUE, "status": "not_open"} for use_dt in dates}
 
 
 class ParseDonghaeValueTest(unittest.TestCase):
@@ -409,6 +414,48 @@ class DonghaeCollectTest(unittest.TestCase):
         self.assertIn("does not solve the booking CAPTCHA", payload["failures"][0]["error"])
         self.assertEqual(payload["results"], [])
 
+    def test_unopened_date_is_reported_but_never_as_bookable(self):
+        payload = helper.collect_results(
+            provider_ids=("donghae-mangsang",),
+            dates=("20261002",),
+            fetchers={"donghae": donghae_not_open_fetcher},
+        )
+        day = payload["results"][0]["dates"][0]
+        self.assertEqual(day["booking_status"], "not_open")
+        self.assertIn("총 정원", day["status_note"])
+        self.assertTrue(day["zones"], "the day must still be shown, not silently dropped")
+        self.assertTrue(all(not z["available"] for z in day["zones"]))
+        self.assertEqual(payload["filter_hits"], 0)
+
+    def test_unopened_day_survives_the_available_only_default(self):
+        payload = helper.collect_results(
+            provider_ids=("donghae-mangsang",),
+            dates=("20261002",),
+            include_full=False,
+            fetchers={"donghae": donghae_not_open_fetcher},
+        )
+        self.assertTrue(payload["results"], "an unopened day must not vanish by default")
+
+    def test_text_output_warns_about_capacity_not_vacancy(self):
+        payload = helper.collect_results(
+            provider_ids=("donghae-mangsang",),
+            dates=("20261002",),
+            fetchers={"donghae": donghae_not_open_fetcher},
+        )
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            helper.print_text(payload)
+        self.assertIn("총 정원", buffer.getvalue())
+
+    def test_open_day_still_counts_as_vacancy(self):
+        payload = helper.collect_results(
+            provider_ids=("donghae-mangsang",),
+            dates=("20260830",),
+            fetchers={"donghae": donghae_fetcher},
+        )
+        self.assertEqual(payload["results"][0]["dates"][0]["booking_status"], "open")
+        self.assertEqual(payload["filter_hits"], 3)
+
     def test_all_four_donghae_sites_have_distinct_codes(self):
         codes = {
             pid: helper.PROVIDERS[pid].trrsrt_code
@@ -417,6 +464,20 @@ class DonghaeCollectTest(unittest.TestCase):
         }
         self.assertEqual(len(codes), 4)
         self.assertEqual(len(set(codes.values())), 4)
+
+
+class ClassifyDonghaeLabelTest(unittest.TestCase):
+    def test_known_labels(self):
+        self.assertEqual(helper.classify_donghae_label("예약현황보기"), "open")
+        self.assertEqual(helper.classify_donghae_label("예약마감"), "full")
+        self.assertEqual(helper.classify_donghae_label("예약종료"), "closed")
+
+    def test_empty_label_means_the_window_has_not_opened(self):
+        self.assertEqual(helper.classify_donghae_label(""), "not_open")
+        self.assertEqual(helper.classify_donghae_label("   "), "not_open")
+
+    def test_unknown_label_is_not_assumed_open(self):
+        self.assertEqual(helper.classify_donghae_label("점검중"), "unknown")
 
 
 class RegistryScopeTest(unittest.TestCase):
