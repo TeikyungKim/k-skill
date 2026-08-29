@@ -293,10 +293,29 @@ GET /user/reservation/BD_reservation.do?q_year=2026&q_month=10
 | 충주 목계솔밭 외 다수 | **미리해** (`mirihae.com`) | 모든 경로가 `cdn.mirihae.com:9443/entering.html` **웹대기(대기열)** 로 리다이렉트된다. 대기열 뒤에 자동 조회를 붙이지 않는다는 것이 이 스킬의 경계다. 재사용 가치는 가장 크지만(이포보·금은모래·다리안·충주 등 멀티테넌트) 보류한다 |
 | 달서 별빛캠프 | **xticket** (`camp.xticket.kr`) | `shopEncode` 링크가 302 루프를 돈다. 세션 구조 조사 필요. 멀티테넌트로 보여 조사 가치는 있다 |
 | 안산 화랑 오토캠핑장 | 인터파크 + **추첨제** | 선착순이 아니라 추첨이라 "잔여 면수" 모델이 맞지 않는다. 붙이려면 추첨 신청기간·발표일을 다루는 별도 모델이 필요하다 |
-| 태백산 국립공원 소도자동차 야영장 | 국립공원 (`reservation.knps.or.kr`) | 숲나들e에 없다(이름 조회 실패). 단독 어댑터가 필요하지만 전국 국립공원 야영장을 커버하므로 값어치가 크다 |
+| 국립공원 야영장 전체 (태백산 소도 포함) | 국립공원 (`reservation.knps.or.kr`) | **NetFunnel 대기열.** 아래 참고 |
 | 국립공원 야영장 | `reservation.knps.or.kr` | 미조사 |
 
 ---
+
+### 대기열 게이트로 채택하지 않은 시스템
+
+두 시스템은 커버리지가 크지만 **잔여 조회 자체가 대기열 뒤에 있다.** 이 스킬은 대기열 우회를 하지 않으므로 채택하지 않는다. 기술적으로 막힌 것이 아니라 **의도적으로 멈춘 것**이다.
+
+**미리해 (`mirihae.com`)** — 이포보·금은모래·다리안·충주 목계솔밭 등 다수 지자체가 쓰는 멀티테넌트 플랫폼이다. 재사용 가치는 레지스트리에서 가장 크다. 그러나 모든 경로가 `cdn.mirihae.com:9443/entering.html`(웹 대기)로 리다이렉트된다.
+
+**국립공원 (`reservation.knps.or.kr`)** — 전국 20개 국립공원 야영장을 한 곳에서 커버한다. 잔여현황 화면은 로그인 없이 열리고 엔드포인트도 단순하다.
+
+```javascript
+NetFunnel_Action({action_id:'reservation2'}, function(ev, ret){
+    $.ajax({ type:'post', url:'/reservation/campsiteList.do',
+             data:{ dept_id, dept_name, parent_dept_name, prd_ctg_id, isGreenpoint } });
+});
+```
+
+`campsiteList.do` 호출이 **NetFunnel(상용 대기열 솔루션)로 감싸여** 있다. 이 래퍼를 건너뛰고 엔드포인트를 직접 부르는 것이 곧 대기열 우회다. 서버가 강제하는지 여부와 무관하게 하지 않는다.
+
+두 곳 모두 사이트가 대기열을 푸는 방식으로 바뀌면 재검토한다.
 
 ## 새 어댑터 추가 절차
 
