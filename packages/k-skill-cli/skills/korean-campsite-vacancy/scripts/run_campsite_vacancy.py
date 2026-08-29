@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -44,7 +45,11 @@ class Provider:
     note: str = ""
     delegate: str | None = None
     camp_seq: str | None = None
+    trrsrt_code: str | None = None
+    credential_env: tuple[str, str] | None = None
 
+
+DONGHAE_ENV = ("KSKILL_DONGHAE_ID", "KSKILL_DONGHAE_PASSWORD")
 
 PROVIDERS: dict[str, Provider] = {
     "gtdc-yeongok": Provider(
@@ -85,6 +90,50 @@ PROVIDERS: dict[str, Provider] = {
         kind="camping",
         note="가평군이 땡큐캠핑 플랫폼에 입점한 형태다. 플랫폼 공통 어댑터를 쓴다.",
         camp_seq="1",
+    ),
+    "donghae-mangsang": Provider(
+        id="donghae-mangsang",
+        name="망상오토캠핑리조트",
+        operator="동해시시설관리공단",
+        entrypoint="https://www.campingkorea.or.kr",
+        transport="donghae",
+        requires_login=True,
+        kind="camping",
+        trrsrt_code="1000",
+        credential_env=DONGHAE_ENV,
+    ),
+    "donghae-mangsang2": Provider(
+        id="donghae-mangsang2",
+        name="망상제2오토캠핑장",
+        operator="동해시시설관리공단",
+        entrypoint="https://www.campingkorea.or.kr",
+        transport="donghae",
+        requires_login=True,
+        kind="camping",
+        trrsrt_code="2000",
+        credential_env=DONGHAE_ENV,
+    ),
+    "donghae-mureung": Provider(
+        id="donghae-mureung",
+        name="무릉힐링캠핑장",
+        operator="동해시시설관리공단",
+        entrypoint="https://www.campingkorea.or.kr",
+        transport="donghae",
+        requires_login=True,
+        kind="camping",
+        trrsrt_code="3000",
+        credential_env=DONGHAE_ENV,
+    ),
+    "donghae-chuam": Provider(
+        id="donghae-chuam",
+        name="추암오토캠핑장",
+        operator="동해시시설관리공단",
+        entrypoint="https://www.campingkorea.or.kr",
+        transport="donghae",
+        requires_login=True,
+        kind="camping",
+        trrsrt_code="4000",
+        credential_env=DONGHAE_ENV,
     ),
     "foresttrip": Provider(
         id="foresttrip",
@@ -293,6 +342,160 @@ def fetch_month_html(entrypoint: str, month: str, *, timeout_ms: int = DEFAULT_T
             browser.close()
 
 
+# --- transport: donghae -----------------------------------------------------
+#
+# 동해시 통합예약(campingkorea.or.kr) hosts four municipal campgrounds behind a
+# member login. Unlike the other transports the vacancy view is not public.
+#
+# Boundary note: the reservation page issues its own short-lived "PASS" key into
+# sessionStorage on load, and the read-only calendar endpoint accepts that key.
+# This adapter reuses the key the page handed it — the same way foresttrip-vacancy
+# reuses the CSRF token its page hands out. The CAPTCHA on this site guards the
+# *booking* step (1단계 날짜선택 -> 다음) and is never touched, solved, or bypassed.
+DONGHAE_LOGIN_PATH = "/login/BD_loginForm.do"
+DONGHAE_RESERVE_PATH = "/user/reservation/BD_reservation.do"
+DONGHAE_DETAIL_PATH = "/user/reservation/ND_selectFcltyCalendarDetail.do"
+DONGHAE_ROW_SEP = "|^|"
+DONGHAE_NOPASS = "NOPASS:"
+
+
+def parse_donghae_value(value: str) -> list[dict[str, Any]]:
+    """Parse the packed `이름:잔여수|^|이름:예약완료` payload into zone records.
+
+    Pure function so the parser is testable without a login.
+    """
+    zones: list[dict[str, Any]] = []
+    if not value:
+        return zones
+
+    for index, chunk in enumerate(value.split(DONGHAE_ROW_SEP)):
+        chunk = chunk.strip()
+        if not chunk or ":" not in chunk:
+            continue
+        name, _, raw_state = chunk.rpartition(":")
+        name = name.strip()
+        state = raw_state.strip()
+        if not name:
+            continue
+        remaining = int(state) if state.isdigit() else None
+        zones.append(
+            {
+                "zone_id": str(index + 1),
+                "zone": name,
+                "remaining": remaining,
+                "available": remaining is not None and remaining > 0,
+            }
+        )
+
+    return zones
+
+
+def require_credentials(provider: Provider) -> tuple[str, str]:
+    if not provider.credential_env:
+        raise SystemExit(f"{provider.id} has no credential_env declared")
+    id_key, pw_key = provider.credential_env
+    user = os.environ.get(id_key, "").strip()
+    password = os.environ.get(pw_key, "")
+    if not user or not password or user == "replace-me":
+        raise SystemExit(
+            f"{provider.id} needs {id_key} and {pw_key}. "
+            "Set them in the environment or ~/.config/k-skill/secrets.env "
+            "(never paste credentials into the chat)."
+        )
+    return user, password
+
+
+def fetch_donghae_days(
+    entrypoint: str,
+    trrsrt_code: str,
+    dates: tuple[str, ...],
+    *,
+    user: str,
+    password: str,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+) -> dict[str, str]:
+    """Log in once, then read the read-only facility calendar for each date."""
+    try:
+        from playwright.sync_api import Error as PlaywrightError  # type: ignore[reportMissingImports]
+        from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
+    except ImportError as exc:  # pragma: no cover - environment dependent
+        raise SystemExit(
+            "playwright is required. Install with: python3 -m pip install playwright "
+            "&& python3 -m playwright install chromium"
+        ) from exc
+
+    base = entrypoint.rstrip("/")
+    values: dict[str, str] = {}
+
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(headless=True)
+        except PlaywrightError as exc:  # pragma: no cover - environment dependent
+            raise SystemExit(
+                "playwright chromium browser is required. Install with: "
+                "python3 -m playwright install chromium"
+            ) from exc
+        try:
+            page = browser.new_page()
+            page.goto(base + DONGHAE_LOGIN_PATH, timeout=timeout_ms)
+            page.fill("#dataForm [name='userId']", user)
+            page.fill("#dataForm [name='userPassword']", password)
+            page.keyboard.press("Enter")
+            page.wait_for_load_state("networkidle", timeout=timeout_ms)
+
+            page.goto(base + DONGHAE_RESERVE_PATH, timeout=timeout_ms)
+            page.wait_for_load_state("networkidle", timeout=timeout_ms)
+
+            if "loginForm" in page.url:
+                raise SystemExit("donghae login failed; check the id/password")
+
+            for use_dt in dates:
+                payload = page.evaluate(
+                    """async ({path, trrsrtCode, year, month, day}) => {
+                        const key = sessionStorage.getItem('dhscamp_pass_RESV1') || '';
+                        const nf = sessionStorage.getItem('dhscamp_pass_netfunnelt') || '0';
+                        const body = new URLSearchParams({
+                            trrsrtCode, q_year: year, q_month: month, qDay: day,
+                            passResv1: key, passNfTime: nf,
+                        });
+                        const res = await fetch(path, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body,
+                        });
+                        return await res.text();
+                    }""",
+                    {
+                        "path": DONGHAE_DETAIL_PATH,
+                        "trrsrtCode": trrsrt_code,
+                        "year": use_dt[:4],
+                        "month": use_dt[4:6],
+                        "day": str(int(use_dt[6:8])),
+                    },
+                )
+                try:
+                    parsed = json.loads(payload)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(f"unexpected donghae response for {use_dt}") from exc
+
+                value = parsed.get("value") or ""
+                if isinstance(value, str) and value.startswith(DONGHAE_NOPASS):
+                    raise RuntimeError(
+                        "donghae refused the page-issued pass key; the site flow changed. "
+                        "This adapter does not solve the booking CAPTCHA."
+                    )
+                if parsed.get("result") is not True:
+                    continue
+                values[use_dt] = value
+        finally:
+            browser.close()
+
+    return values
+
+
 def check_dependencies(*, launch_browser: bool = True) -> None:
     try:
         from playwright.sync_api import Error as PlaywrightError  # type: ignore[reportMissingImports]
@@ -431,6 +634,40 @@ def collect_thankq(
     return days, failures
 
 
+def collect_donghae(
+    provider: Provider,
+    dates: tuple[str, ...],
+    fetch: Callable[..., dict[str, str]],
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
+    """One login per provider, then one calendar read per requested date."""
+    days: dict[str, dict[str, Any]] = {}
+    failures: list[dict[str, str]] = []
+
+    user, password = require_credentials(provider)
+    try:
+        values = fetch(
+            provider.entrypoint,
+            provider.trrsrt_code or "",
+            dates,
+            user=user,
+            password=password,
+        )
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+        failures.append(
+            {"provider": provider.id, "scope": ",".join(dates), "error": describe(exc)}
+        )
+        return days, failures
+
+    for use_dt, value in values.items():
+        zones = parse_donghae_value(value)
+        if zones:
+            days[use_dt] = {"use_dt": use_dt, "season": None, "zones": zones}
+
+    return days, failures
+
+
 def describe(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {exc}"
 
@@ -446,6 +683,7 @@ def collect_results(
     active = {
         "dzsmart": fetch_month_html,
         "thankq": fetch_thankq_day,
+        "donghae": fetch_donghae_days,
         **(fetchers or {}),
     }
 
@@ -468,6 +706,8 @@ def collect_results(
 
         if provider.transport == "thankq":
             day_rows, provider_failures = collect_thankq(provider, dates, fetch)
+        elif provider.transport == "donghae":
+            day_rows, provider_failures = collect_donghae(provider, dates, fetch)
         else:
             day_rows, provider_failures = collect_dzsmart(provider, dates, fetch)
         failures.extend(provider_failures)
@@ -518,6 +758,8 @@ def print_providers() -> None:
         print(f"  operator  : {provider.operator}")
         print(f"  entrypoint: {provider.entrypoint}")
         print(f"  kind      : {provider.kind}")
+        if provider.credential_env:
+            print(f"  env       : {' , '.join(provider.credential_env)}")
         if provider.note:
             print(f"  note      : {provider.note}")
 
@@ -596,6 +838,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             "thankq": lambda entrypoint, camp_seq, use_dt: fetch_thankq_day(
                 entrypoint, camp_seq, use_dt, timeout_ms=args.timeout_ms
+            ),
+            "donghae": lambda entrypoint, code, dates, *, user, password: fetch_donghae_days(
+                entrypoint, code, dates, user=user, password=password, timeout_ms=args.timeout_ms
             ),
         },
     )

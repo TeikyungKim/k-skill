@@ -143,6 +143,64 @@ campseq=1&res_dt=20260905&res_edt=20260905&res_days=1&site_tp=&only_able_yn=
 
 ---
 
+## transport: `donghae`
+
+동해시 통합예약(`campingkorea.or.kr`)이다. 동해시시설관리공단이 캠핑장 4곳을 여기서 운영한다. **다른 transport와 달리 조회부터 회원 로그인이 필요하다.**
+
+### 로그인
+
+비로그인 상태로 예약 endpoint를 호출하면 이렇게 답한다.
+
+```json
+{"result":false,"message":"로그인 후 이용해 주십시오."}
+```
+
+로그인 폼은 `POST /login/ND_loginAction.do` (`userId`, `userPassword`)인데, **비밀번호가 CryptoJS AES로 클라이언트에서 암호화**된 뒤 전송된다(`userPassword=<base64 ciphertext>`). 순수 HTTP로 재현하면 `500`이 난다. 그래서 `foresttrip-vacancy`와 같이 **Playwright로 실제 폼을 구동**해 페이지 JS가 암호화하게 둔다.
+
+credential은 `KSKILL_DONGHAE_ID` / `KSKILL_DONGHAE_PASSWORD` 환경변수로만 읽는다.
+
+### 경계: CAPTCHA는 예약 단계에만 있다
+
+이 사이트에는 CAPTCHA(`/user/reservation/ND_ncaptcha.do`, 입력 필드 `answer`)가 있다. 위치가 중요하다.
+
+- **1단계 날짜선택 → "다음"** 으로 넘어갈 때 = 예약 진행. **여기가 CAPTCHA 구간이고 건드리지 않는다.**
+- **잔여 현황 조회**(달력의 `예약현황보기`) = 예약 페이지가 로드 시점에 `sessionStorage.dhscamp_pass_RESV1`로 발급한 PASS 키만 있으면 된다.
+
+확인한 것:
+
+- `passResv1`를 비우고 호출 → `{"result":false,"value":"NOPASS: 디지털 패스권 확인에 실패하였습니다."}`
+- 페이지가 스스로 발급한 키를 그대로 사용 → `{"result":true,"value":"전통한옥:6|^|..."}`
+
+즉 어댑터는 **페이지가 자기에게 건네준 키를 재사용**할 뿐이다. `foresttrip-vacancy`가 자기 페이지의 CSRF 토큰을 재사용하는 것과 같다. 캡차를 풀거나 OCR하거나 우회하지 않는다. NOPASS가 돌아오면 **실패로 보고하고 멈춘다.**
+
+### 데이터 흐름
+
+```
+POST /user/reservation/ND_selectFcltyCalendarDetail.do
+trrsrtCode=1000&q_year=2026&q_month=08&qDay=30&passResv1=<page key>&passNfTime=<page key>
+```
+
+응답 `value`는 JSON이 아니라 구분자로 묶인 문자열이다.
+
+```
+전통한옥:6|^|캐빈하우스:예약완료|^|난바다:1|^|자동차캠핑장:24
+```
+
+- 구분자는 `|^|`, 각 조각은 `이름:상태`
+- 상태가 숫자면 잔여 면수, `예약완료`면 마감
+- 존 이름에 `글램핑(4인)`처럼 괄호가 들어가므로 **마지막 `:` 기준으로 나눈다**
+
+### 등록된 사이트
+
+| provider id | trrsrtCode | 캠핑장 | 확인 |
+| --- | --- | --- | --- |
+| `donghae-mangsang` | 1000 | 망상오토캠핑리조트 | 라이브 확인 완료 |
+| `donghae-mangsang2` | 2000 | 망상제2오토캠핑장 | 라이브 확인 완료 |
+| `donghae-mureung` | 3000 | 무릉힐링캠핑장 | 라이브 확인 완료 |
+| `donghae-chuam` | 4000 | 추암오토캠핑장 | 라이브 확인 완료 |
+
+---
+
 ## transport: `delegate`
 
 다른 스킬이 이미 담당하는 시스템이다. 레지스트리에는 **사용자를 올바른 스킬로 보내기 위해** 남긴다.
@@ -150,6 +208,13 @@ campseq=1&res_dt=20260905&res_edt=20260905&res_days=1&site_tp=&only_able_yn=
 | provider id | 담당 스킬 | 이유 |
 | --- | --- | --- |
 | `foresttrip` | `foresttrip-vacancy` | 로그인·CSRF가 필요하고 조회 endpoint가 완전히 다르다 |
+
+### 아직 어댑터가 없는 곳
+
+| 대상 | 시스템 | 막힌 지점 |
+| --- | --- | --- |
+| 화성 향남 오토캠핑장 | 화성특례시 통합예약 (`yeyak.hscity.go.kr`) | 조회 화면이 "로그인 후 이용이 가능합니다"로 막힌다. 계정이 있으면 `donghae`와 비슷한 방식이 가능할 수 있다 |
+| 국립공원 야영장 | `reservation.knps.or.kr` | 미조사 |
 
 ---
 

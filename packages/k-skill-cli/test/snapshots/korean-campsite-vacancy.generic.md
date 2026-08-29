@@ -8,6 +8,7 @@ Runtime mode: generic
 - When the user asks for an action and the official surface supports it lawfully, continue beyond lookup through reversible preparation and execution. Do not declare completion at a result list, deep link, or handoff when the action can still be carried out.
 - Immediately before an irreversible external side effect such as payment, message/email delivery, final submission, cancellation, account mutation, or public posting, call `clarify` with the exact target, amount/payload, and effect. Execute only after approval; do not ask again for already-approved reversible steps.
 - Preserve hard boundaries for law, required physical presence, CAPTCHA, identity proofing, electronic signatures, and unsupported official surfaces. In those cases, complete the furthest lawful supported step and open or prepare the exact next official step for the user.
+- Resolve credentials in this order: already-injected environment variables, then the host vault, then `~/.config/k-skill/secrets.env` (mode `0600`). If the value is missing, request it through the safest input surface the host provides and store it in the vault or dotenv; never echo it back.
 - Use `k-skill-browser-runtime` (provider `auto`: BrowserOS CDP, then Aside CLI, then user-launched Chrome CDP) for logged-in or rendered-page automation. Do not launch or close the user's browser, and never solve CAPTCHA, identity proofing, or e-signature flows.
 - This skill is lookup-oriented. Completion means the requested data is retrieved, summarized with its source (table/endpoint, period, unit), and any requested follow-up action is connected to the official surface that supports it.
 
@@ -45,7 +46,7 @@ Runtime mode: generic
 ## Prerequisites
 
 - Python 3.9+
-- Playwright Chromium browser — **`dzsmart` transport에만 필요하다.** `thankq` transport는 표준 라이브러리만 쓰므로 브라우저 없이 동작한다.
+- Playwright Chromium browser — **`dzsmart`·`donghae` transport에 필요하다.** `thankq` transport는 표준 라이브러리만 쓰므로 브라우저 없이 동작한다.
 
 ```bash
 python3 -m pip install playwright
@@ -55,7 +56,16 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 
 ## Required environment variables
 
-- 없음. 레지스트리에 등록된 조회 경로는 전부 **로그인·API 키 불필요**하다.
+로그인이 필요한 provider에만 해당한다. 나머지는 아무 것도 필요 없다.
+
+- `KSKILL_DONGHAE_ID` / `KSKILL_DONGHAE_PASSWORD` — 동해시 통합예약(`campingkorea.or.kr`) 회원 계정. `donghae-*` provider 4곳에만 쓴다.
+
+### Credential handling
+
+- 돌쇠 credential mode에서는 `vault-run`을 사용하고, 없으면 `request_vault_credential`을 호출한다.
+- 그 밖의 환경에서는 이미 주입된 환경변수 → host vault → `~/.config/k-skill/secrets.env` 순서로 사용한다.
+- **평문 credential을 채팅창이나 shell 인자에 넣지 않는다.** helper는 환경변수만 읽는다.
+- credential이 없으면 조회를 건너뛰고 그 사실을 말한다. 대체 사이트나 우회 경로를 찾지 않는다.
 
 ## Provider adapter rule
 
@@ -66,7 +76,7 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 - `provider id`: 예) `gtdc-yeongok`
 - `운영기관`: 실제 운영 주체
 - `entrypoint`: 공식 예약 진입 URL
-- `transport`: 데이터를 어떻게 얻는지 (`dzsmart` 브라우저 렌더 파싱 / `thankq` form POST / `delegate`)
+- `transport`: 데이터를 어떻게 얻는지 (`dzsmart` 브라우저 렌더 파싱 / `thankq` form POST / `donghae` 로그인 후 조회 / `delegate`)
 - `zone 모델`: 존·사이트 구분 방식
 - `date 모델`: 날짜가 어디에 인코딩되는지
 - `parser`: 잔여 면수를 어느 필드에서 뽑는지
@@ -83,6 +93,10 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 | `gtdc-badanaeum` | 강릉바다내음캠핑장 | 강릉관광개발공사 | `dzsmart` | 불필요 |
 | `gtdc-ojuk` | 강릉오죽한옥마을(숙박) | 강릉관광개발공사 | `dzsmart` | 불필요 |
 | `thankq-jaraseom` | 자라섬캠핑장 | 가평군시설관리공단 | `thankq` | 불필요 |
+| `donghae-mangsang` | 망상오토캠핑리조트 | 동해시시설관리공단 | `donghae` | **필요** |
+| `donghae-mangsang2` | 망상제2오토캠핑장 | 동해시시설관리공단 | `donghae` | **필요** |
+| `donghae-mureung` | 무릉힐링캠핑장 | 동해시시설관리공단 | `donghae` | **필요** |
+| `donghae-chuam` | 추암오토캠핑장 | 동해시시설관리공단 | `donghae` | **필요** |
 | `foresttrip` | 국립자연휴양림 | 산림청 | `delegate` | 필요 |
 
 `foresttrip`은 조회 경로가 아니라 **위임 표시**다. 이 provider를 지정하면 helper는 `foresttrip-vacancy` 스킬을 쓰라는 오류를 낸다.
@@ -170,6 +184,9 @@ https://camping.gtdc.or.kr/pub/reserv.do
 
 - Playwright 미설치: `python3 -m pip install playwright && python3 -m playwright install chromium` (`dzsmart` provider에만 해당)
 - `thankq` 500 응답: 날짜 형식이 `YYYYMMDD`가 아니거나 `camp_seq`가 잘못됐다
+- `donghae` credential 누락: `KSKILL_DONGHAE_ID` / `KSKILL_DONGHAE_PASSWORD` 확인. 값이 `replace-me`면 미설정으로 처리된다
+- `donghae` 로그인 실패: 아이디/비밀번호를 확인한다. 대신 캡차를 풀지 않는다
+- `donghae` NOPASS 응답: 사이트 흐름이 바뀐 것이다. **캡차를 우회하지 말고** 실패로 보고한다
 - `wait_for_selector` timeout: 예약 시스템 점검 중이거나 해당 월이 아직 오픈 전이다. 월을 바꿔 재확인하고, 그래도 비면 "해당 월 예약 미오픈"으로 보고한다
 - 결과가 전부 마감: 정상 동작이다. 성수기 주말은 대부분 마감이다
 - 존 이름이 바뀜: dzSmart 존 구성은 운영기관이 시즌마다 바꾼다. `--include-full`로 원본 존 목록을 먼저 확인한다
@@ -180,6 +197,7 @@ https://camping.gtdc.or.kr/pub/reserv.do
 
 - `dzsmart`는 provider × 월 단위로 페이지를 1회씩만 연다.
 - `thankq`는 월 조회 화면이 없어 provider × 날짜 단위로 1회씩 요청한다. 날짜 범위를 넓게 잡으면 요청 수가 그만큼 늘어나므로 필요한 날짜만 지정한다.
+- `donghae`는 provider당 로그인 1회 + 날짜당 조회 1회다. 로그인이 비싸므로 날짜를 모아서 한 번에 넘긴다.
 - 취소표를 노린 반복 폴링을 하지 않는다. 사용자가 반복 확인을 원하면 공식 알림 기능을 안내한다.
 
 ## Maintainer review notes
@@ -201,3 +219,4 @@ https://camping.gtdc.or.kr/pub/reserv.do
 - 레지스트리에 없는 사이트를 URL 패턴으로 추측해 조회하지 않는다.
 - 공개 예약 화면이 노출하는 잔여 수만 읽고, 개인 예약 내역 조회 화면에는 접근하지 않는다.
 - 민간 플랫폼(`thankq`)에서는 등록된 공공 운영 캠핑장만 조회한다. `camp_seq`를 임의로 바꿔 사설 캠핑장을 훑지 않는다.
+- `donghae`는 사용자 본인 계정으로 로그인해 **공개 잔여 현황 화면만** 읽는다. 예약 단계의 캡차는 건드리지 않고, 타인 예약 내역에도 접근하지 않는다.

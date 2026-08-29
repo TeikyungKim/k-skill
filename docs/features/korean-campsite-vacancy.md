@@ -32,13 +32,17 @@
 | `gtdc-badanaeum` | 강릉바다내음캠핑장 | 강릉관광개발공사 | 불필요 |
 | `gtdc-ojuk` | 강릉오죽한옥마을(한옥 숙박) | 강릉관광개발공사 | 불필요 |
 | `thankq-jaraseom` | 자라섬캠핑장 | 가평군시설관리공단 | 불필요 |
+| `donghae-mangsang` | 망상오토캠핑리조트 | 동해시시설관리공단 | **필요** |
+| `donghae-mangsang2` | 망상제2오토캠핑장 | 동해시시설관리공단 | **필요** |
+| `donghae-mureung` | 무릉힐링캠핑장 | 동해시시설관리공단 | **필요** |
+| `donghae-chuam` | 추암오토캠핑장 | 동해시시설관리공단 | **필요** |
 
 국립자연휴양림은 [자연휴양림 빈 객실 조회 가이드](foresttrip-vacancy.md)를 본다. 레지스트리에는 `foresttrip`이 **위임 표시**로만 들어 있어, 해당 provider를 지정하면 올바른 스킬을 안내하는 오류가 난다.
 
 ## 먼저 필요한 것
 
 - Python 3.9+
-- Playwright Chromium — **`dzsmart` 경로(강릉 3곳)에만 필요하다.** 자라섬(`thankq`)은 표준 라이브러리만으로 조회된다
+- Playwright Chromium — **`dzsmart`(강릉 3곳)·`donghae`(동해 4곳) 경로에 필요하다.** 자라섬(`thankq`)은 표준 라이브러리만으로 조회된다
 - [공통 설정 가이드](../setup.md) 완료
 
 ```bash
@@ -49,7 +53,14 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 
 ## 필요한 환경변수
 
-없다. 등록된 조회 경로는 전부 로그인과 API 키가 필요 없다.
+강릉 3곳과 자라섬은 아무 것도 필요 없다. 동해시 4곳만 회원 계정이 필요하다.
+
+```
+KSKILL_DONGHAE_ID
+KSKILL_DONGHAE_PASSWORD
+```
+
+`~/.config/k-skill/secrets.env`에 넣고 셸에 올리거나, 사용자 환경변수로 등록한다. helper는 환경변수만 읽으며 평문 credential을 인자로 받지 않는다.
 
 ## 사용 예시
 
@@ -110,6 +121,14 @@ campseq=1&res_dt=20260905&res_edt=20260905&res_days=1&site_tp=&only_able_yn=
 응답에는 존마다 구버전 마크업이 주석으로 중복돼 들어오므로, 파서는 주석을 먼저 제거한 뒤 존을 센다.
 
 > **플랫폼이 민간인 것과 캠핑장이 민간인 것은 다르다.** 등록 기준은 **운영기관**이다. 자라섬은 가평군시설관리공단이 운영하므로 대상이고, 같은 플랫폼의 사설 캠핑장은 대상이 아니다. dzSmart도 denobiz라는 민간 업체 제품이라는 점에서 사정이 같다. helper는 레지스트리에 등록된 id만 받으므로 `campseq`를 임의로 바꿔 사설 캠핑장을 훑을 경로가 없다.
+
+### `donghae` — 동해시 4곳
+
+동해시 통합예약은 **조회부터 로그인이 필요하다.** 비밀번호가 CryptoJS AES로 클라이언트 암호화되어 전송되므로 순수 HTTP로는 로그인이 안 된다(500). `foresttrip-vacancy`처럼 Playwright로 실제 폼을 구동한다.
+
+응답은 `전통한옥:6|^|캐빈하우스:예약완료` 형태의 구분자 문자열이다. 존 이름에 `글램핑(4인)`처럼 괄호가 들어가므로 마지막 `:` 기준으로 나눈다.
+
+> **CAPTCHA 위치가 중요하다.** 이 사이트의 캡차는 **예약 진행(1단계 → 다음)** 을 막는다. 잔여 현황 조회는 예약 페이지가 로드 시점에 스스로 발급한 PASS 키만 있으면 된다. 어댑터는 그 키를 재사용할 뿐이며 — `foresttrip-vacancy`가 자기 페이지의 CSRF 토큰을 쓰는 것과 같다 — 캡차를 풀거나 우회하지 않는다. `NOPASS` 응답이 오면 실패로 보고하고 멈춘다.
 
 ## 경계
 

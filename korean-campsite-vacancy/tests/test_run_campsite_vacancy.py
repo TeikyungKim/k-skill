@@ -1,5 +1,6 @@
 import argparse
 import importlib.util
+import os
 import io
 import json
 import sys
@@ -314,6 +315,110 @@ class ThankqCollectTest(unittest.TestCase):
         self.assertEqual(payload["results"], [])
 
 
+DONGHAE_VALUE = (
+    "전통한옥:6|^|캐빈하우스:예약완료|^|든바다:예약완료|^|난바다:1"
+    "|^|허허바다:예약완료|^|자동차캠핑장:24|^|글램핑(4인):예약완료"
+)
+
+
+def donghae_fetcher(_entrypoint, _code, dates, *, user, password):
+    assert user and password
+    return {use_dt: DONGHAE_VALUE for use_dt in dates}
+
+
+class ParseDonghaeValueTest(unittest.TestCase):
+    def setUp(self):
+        self.zones = helper.parse_donghae_value(DONGHAE_VALUE)
+        self.by_name = {zone["zone"]: zone for zone in self.zones}
+
+    def test_every_segment_becomes_a_zone(self):
+        self.assertEqual(len(self.zones), 7)
+
+    def test_numeric_state_is_the_remaining_count(self):
+        self.assertEqual(self.by_name["전통한옥"]["remaining"], 6)
+        self.assertTrue(self.by_name["자동차캠핑장"]["available"])
+
+    def test_sold_out_state_reads_as_unavailable(self):
+        self.assertIsNone(self.by_name["캐빈하우스"]["remaining"])
+        self.assertFalse(self.by_name["캐빈하우스"]["available"])
+
+    def test_zone_name_with_parentheses_survives_the_split(self):
+        self.assertIn("글램핑(4인)", self.by_name)
+
+    def test_empty_or_malformed_payload_yields_no_zones(self):
+        self.assertEqual(helper.parse_donghae_value(""), [])
+        self.assertEqual(helper.parse_donghae_value("쓰레기"), [])
+
+
+class DonghaeCollectTest(unittest.TestCase):
+    def setUp(self):
+        self.env = mock.patch.dict(
+            os.environ,
+            {"KSKILL_DONGHAE_ID": "tester", "KSKILL_DONGHAE_PASSWORD": "secret"},
+        )
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def test_login_provider_returns_zones(self):
+        payload = helper.collect_results(
+            provider_ids=("donghae-mangsang",),
+            dates=("20260830",),
+            fetchers={"donghae": donghae_fetcher},
+        )
+        site = payload["results"][0]
+        self.assertEqual(site["operator"], "동해시시설관리공단")
+        self.assertEqual(
+            [zone["zone"] for zone in site["dates"][0]["zones"]],
+            ["전통한옥", "난바다", "자동차캠핑장"],
+        )
+
+    def test_missing_credentials_stop_the_run(self):
+        with mock.patch.dict(os.environ, {"KSKILL_DONGHAE_ID": "", "KSKILL_DONGHAE_PASSWORD": ""}):
+            with self.assertRaises(SystemExit) as ctx:
+                helper.collect_results(
+                    provider_ids=("donghae-mangsang",),
+                    dates=("20260830",),
+                    fetchers={"donghae": donghae_fetcher},
+                )
+        message = str(ctx.exception)
+        self.assertIn("KSKILL_DONGHAE_ID", message)
+        self.assertIn("never paste credentials", message)
+
+    def test_placeholder_credential_is_rejected(self):
+        with mock.patch.dict(os.environ, {"KSKILL_DONGHAE_ID": "replace-me"}):
+            with self.assertRaises(SystemExit):
+                helper.collect_results(
+                    provider_ids=("donghae-mangsang",),
+                    dates=("20260830",),
+                    fetchers={"donghae": donghae_fetcher},
+                )
+
+    def test_nopass_surfaces_as_a_failure_not_a_captcha_attempt(self):
+        def refuse(_entrypoint, _code, _dates, *, user, password):
+            raise RuntimeError(
+                "donghae refused the page-issued pass key; the site flow changed. "
+                "This adapter does not solve the booking CAPTCHA."
+            )
+
+        payload = helper.collect_results(
+            provider_ids=("donghae-mangsang",),
+            dates=("20260830",),
+            fetchers={"donghae": refuse},
+        )
+        self.assertEqual(payload["fetch_failures"], 1)
+        self.assertIn("does not solve the booking CAPTCHA", payload["failures"][0]["error"])
+        self.assertEqual(payload["results"], [])
+
+    def test_all_four_donghae_sites_have_distinct_codes(self):
+        codes = {
+            pid: helper.PROVIDERS[pid].trrsrt_code
+            for pid in helper.PROVIDERS
+            if helper.PROVIDERS[pid].transport == "donghae"
+        }
+        self.assertEqual(len(codes), 4)
+        self.assertEqual(len(set(codes.values())), 4)
+
+
 class RegistryScopeTest(unittest.TestCase):
     def test_every_lookup_provider_names_a_public_operator(self):
         for pid in helper.LOOKUP_PROVIDER_IDS:
@@ -328,6 +433,22 @@ class RegistryScopeTest(unittest.TestCase):
 
     def test_dzsmart_providers_do_not_need_a_camp_seq(self):
         self.assertIsNone(helper.PROVIDERS["gtdc-yeongok"].camp_seq)
+
+    def test_login_providers_declare_their_credential_env(self):
+        for pid in helper.LOOKUP_PROVIDER_IDS:
+            provider = helper.PROVIDERS[pid]
+            if provider.requires_login:
+                self.assertIsNotNone(
+                    provider.credential_env, f"{pid} must declare credential_env"
+                )
+
+    def test_no_credential_value_is_hardcoded(self):
+        source = HELPER_PATH.read_text(encoding="utf-8")
+        for pid in helper.LOOKUP_PROVIDER_IDS:
+            provider = helper.PROVIDERS[pid]
+            if provider.credential_env:
+                for key in provider.credential_env:
+                    self.assertNotIn(f'{key} = "', source)
 
 
 class OutputTest(unittest.TestCase):
