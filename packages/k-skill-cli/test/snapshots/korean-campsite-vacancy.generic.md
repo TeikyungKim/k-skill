@@ -46,7 +46,7 @@ Runtime mode: generic
 ## Prerequisites
 
 - Python 3.9+
-- Playwright Chromium browser — **`dzsmart`·`donghae` transport에만 필요하다.** `thankq`·`gmuc`는 표준 라이브러리만 쓰므로 브라우저 없이 동작한다.
+- Playwright Chromium browser — **`dzsmart`·`donghae` transport에만 필요하다.** `thankq`·`gmuc`·`maketicket`은 표준 라이브러리만 쓰므로 브라우저 없이 동작한다.
 
 ```bash
 python3 -m pip install playwright
@@ -76,7 +76,7 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 - `provider id`: 예) `gtdc-yeongok`
 - `운영기관`: 실제 운영 주체
 - `entrypoint`: 공식 예약 진입 URL
-- `transport`: 데이터를 어떻게 얻는지 (`dzsmart` 브라우저 렌더 파싱 / `thankq` form POST / `gmuc` 공개 페이지 GET / `donghae` 로그인 후 조회 / `delegate`)
+- `transport`: 데이터를 어떻게 얻는지 (`dzsmart` 브라우저 렌더 파싱 / `thankq` form POST / `gmuc` 공개 페이지 GET / `maketicket` form POST / `donghae` 로그인 후 조회 / `delegate`)
 - `zone 모델`: 존·사이트 구분 방식
 - `date 모델`: 날짜가 어디에 인코딩되는지
 - `parser`: 잔여 면수를 어느 필드에서 뽑는지
@@ -94,6 +94,8 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 | `gtdc-ojuk` | 강릉오죽한옥마을(숙박) | 강릉관광개발공사 | `dzsmart` | 불필요 |
 | `thankq-jaraseom` | 자라섬캠핑장 | 가평군시설관리공단 | `thankq` | 불필요 |
 | `gmuc-dodeoksan` | 도덕산캠핑장 | 광명도시공사 | `gmuc` | 불필요 |
+| `maketicket-jangho` | 장호비치캠핑장 | 삼척시 | `maketicket` | 불필요 |
+| `maketicket-hyangnam` | 화성시향남오토캠핑장 | 화성도시공사 | `maketicket` | 불필요 |
 | `donghae-mangsang` | 망상오토캠핑리조트 | 동해시시설관리공단 | `donghae` | **필요** |
 | `donghae-mangsang2` | 망상제2오토캠핑장 | 동해시시설관리공단 | `donghae` | **필요** |
 | `donghae-mureung` | 무릉힐링캠핑장 | 동해시시설관리공단 | `donghae` | **필요** |
@@ -186,6 +188,7 @@ https://camping.gtdc.or.kr/pub/reserv.do
 
 - Playwright 미설치: `python3 -m pip install playwright && python3 -m playwright install chromium` (`dzsmart` provider에만 해당)
 - `thankq` 500 응답: 날짜 형식이 `YYYYMMDD`가 아니거나 `camp_seq`가 잘못됐다
+- `maketicket` 날짜 없음: 예약 미오픈이거나 운영하지 않는 날짜다. 실패로 보고되며 "빈자리 없음"이 아니다
 - `gmuc` 범위 밖 날짜: 공개 예약현황이 **당월+익월 2개월만** 노출한다. 그 밖의 날짜는 실패로 보고되며 "빈자리 없음"이 아니다
 - `donghae` credential 누락: `KSKILL_DONGHAE_ID` / `KSKILL_DONGHAE_PASSWORD` 확인. 값이 `replace-me`면 미설정으로 처리된다
 - `donghae` 로그인 실패: 아이디/비밀번호를 확인한다. 대신 캡차를 풀지 않는다
@@ -204,6 +207,7 @@ https://camping.gtdc.or.kr/pub/reserv.do
 - `thankq`는 월 조회 화면이 없어 provider × 날짜 단위로 1회씩 요청한다. 날짜 범위를 넓게 잡으면 요청 수가 그만큼 늘어나므로 필요한 날짜만 지정한다.
 - `donghae`는 provider당 로그인 1회 + 날짜당 조회 1회다. 로그인이 비싸므로 날짜를 모아서 한 번에 넘긴다.
 - `gmuc`는 페이지 1회 요청으로 두 달치를 모두 얻는다. 가장 가벼운 경로다.
+- `maketicket`은 ticket 페이지 1회 + 월별 캘린더 1회다. `idkey`는 하드코딩하지 않고 매번 ticket 페이지에서 읽는다.
 - 취소표를 노린 반복 폴링을 하지 않는다. 사용자가 반복 확인을 원하면 공식 알림 기능을 안내한다.
 
 ## Maintainer review notes

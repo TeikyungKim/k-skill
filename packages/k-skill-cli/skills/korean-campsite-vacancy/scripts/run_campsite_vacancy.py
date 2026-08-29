@@ -46,6 +46,7 @@ class Provider:
     delegate: str | None = None
     camp_seq: str | None = None
     trrsrt_code: str | None = None
+    gd_seq: str | None = None
     credential_env: tuple[str, str] | None = None
 
 
@@ -90,6 +91,27 @@ PROVIDERS: dict[str, Provider] = {
         kind="camping",
         note="가평군이 땡큐캠핑 플랫폼에 입점한 형태다. 플랫폼 공통 어댑터를 쓴다.",
         camp_seq="1",
+    ),
+    "maketicket-jangho": Provider(
+        id="maketicket-jangho",
+        name="장호비치캠핑장",
+        operator="삼척시",
+        entrypoint="https://forest.maketicket.co.kr",
+        transport="maketicket",
+        requires_login=False,
+        kind="camping",
+        gd_seq="GD41",
+    ),
+    "maketicket-hyangnam": Provider(
+        id="maketicket-hyangnam",
+        name="화성시향남오토캠핑장",
+        operator="화성도시공사",
+        entrypoint="https://forest.maketicket.co.kr",
+        transport="maketicket",
+        requires_login=False,
+        kind="camping",
+        gd_seq="GD90",
+        note="화성시 통합예약(yeyak.hscity.go.kr)은 로그인 벽이지만 이 표면은 공개다.",
     ),
     "gmuc-dodeoksan": Provider(
         id="gmuc-dodeoksan",
@@ -350,6 +372,130 @@ def fetch_month_html(entrypoint: str, month: str, *, timeout_ms: int = DEFAULT_T
             return page.content()
         finally:
             browser.close()
+
+
+# --- transport: maketicket -------------------------------------------------
+#
+# 스마틱스(smartix) MakeTicket, rented by several municipalities. No login, no
+# CAPTCHA, no queue, and the calendar answers a plain form POST.
+#
+# The rendered slot carries its own full date, so this parser never has to infer
+# a month from position:
+#   f_SelectDateZone( "20260901" , "CM000036" , "SD68940" , "1" , "2" )
+MAKETICKET_TICKET_PATH = "/ticket/"
+MAKETICKET_CALENDAR_PATH = "/camp/reserve/calendar.jsp"
+MAKETICKET_IDKEY_RE = re.compile(r'idkey:\s*"([^"]+)"')
+MAKETICKET_SLOT_RE = re.compile(
+    r'f_SelectDateZone\(\s*"(?P<use_dt>\d{8})"\s*,\s*"(?P<area>[^"]*)"\s*,'
+    r'\s*"[^"]*"\s*,\s*"[^"]*"\s*,\s*"(?P<count>\d+)"\s*\)[^>]*>'
+    r'\s*<span>\s*\d+\s*</span>\s*(?P<name>[^<]+?)\s*</a>',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def parse_maketicket_html(html: str) -> dict[str, list[dict[str, Any]]]:
+    """Parse a MakeTicket month calendar into ``{YYYYMMDD: zones}``. Pure function."""
+    days: dict[str, list[dict[str, Any]]] = {}
+    for match in MAKETICKET_SLOT_RE.finditer(html):
+        use_dt = match.group("use_dt")
+        remaining = int(match.group("count"))
+        zones = days.setdefault(use_dt, [])
+        zones.append(
+            {
+                "zone_id": match.group("area"),
+                "zone": strip_tags(match.group("name")),
+                "remaining": remaining,
+                "available": remaining > 0,
+            }
+        )
+    return days
+
+
+def fetch_maketicket_month(
+    entrypoint: str,
+    gd_seq: str,
+    month: str,
+    *,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+) -> str:
+    """Read the per-campground idkey from its ticket page, then load one month.
+
+    The idkey is not hardcoded in the registry because the operator can rotate it.
+    """
+    base = entrypoint.rstrip("/")
+    ticket_url = f"{base}{MAKETICKET_TICKET_PATH}{gd_seq}"
+    ticket_req = urllib.request.Request(ticket_url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(ticket_req, timeout=timeout_ms / 1000) as response:
+        ticket_html = response.read().decode("utf-8", errors="replace")
+
+    idkey_match = MAKETICKET_IDKEY_RE.search(ticket_html)
+    if not idkey_match:
+        raise RuntimeError(f"maketicket ticket page for {gd_seq} did not expose an idkey")
+
+    first_day = f"{month}01"
+    payload = urllib.parse.urlencode(
+        {
+            "idkey": idkey_match.group(1),
+            "gd_seq": gd_seq,
+            "yyyymmdd": first_day,
+            "sd_date": first_day,
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        base + MAKETICKET_CALENDAR_PATH,
+        data=payload,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": ticket_url,
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout_ms / 1000) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def collect_maketicket(
+    provider: Provider,
+    dates: tuple[str, ...],
+    fetch: Callable[[str, str, str], str],
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
+    """One calendar load per requested month."""
+    days: dict[str, dict[str, Any]] = {}
+    failures: list[dict[str, str]] = []
+    parsed: dict[str, list[dict[str, Any]]] = {}
+
+    for month in months_for(dates):
+        try:
+            html = fetch(provider.entrypoint, provider.gd_seq or "", month)
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            failures.append({"provider": provider.id, "scope": month, "error": describe(exc)})
+            continue
+        parsed.update(parse_maketicket_html(html))
+
+    for use_dt in dates:
+        zones = parsed.get(use_dt)
+        if zones is None:
+            if any(f["scope"] == use_dt[:6] for f in failures):
+                continue
+            failures.append(
+                {
+                    "provider": provider.id,
+                    "scope": use_dt,
+                    "error": "해당 날짜가 예약 달력에 없다 (예약 미오픈이거나 운영하지 않는 날짜)",
+                }
+            )
+            continue
+        days[use_dt] = {
+            "use_dt": use_dt,
+            "season": None,
+            "booking_status": "open",
+            "zones": zones,
+        }
+
+    return days, failures
 
 
 # --- transport: gmuc --------------------------------------------------------
@@ -872,6 +1018,7 @@ def collect_results(
         "thankq": fetch_thankq_day,
         "donghae": fetch_donghae_days,
         "gmuc": fetch_gmuc_page,
+        "maketicket": fetch_maketicket_month,
         **(fetchers or {}),
     }
 
@@ -898,6 +1045,8 @@ def collect_results(
             day_rows, provider_failures = collect_donghae(provider, dates, fetch)
         elif provider.transport == "gmuc":
             day_rows, provider_failures = collect_gmuc(provider, dates, fetch)
+        elif provider.transport == "maketicket":
+            day_rows, provider_failures = collect_maketicket(provider, dates, fetch)
         else:
             day_rows, provider_failures = collect_dzsmart(provider, dates, fetch)
         failures.extend(provider_failures)
@@ -1047,6 +1196,9 @@ def main(argv: list[str] | None = None) -> int:
                 entrypoint, camp_seq, use_dt, timeout_ms=args.timeout_ms
             ),
             "gmuc": lambda entrypoint: fetch_gmuc_page(entrypoint, timeout_ms=args.timeout_ms),
+            "maketicket": lambda entrypoint, gd_seq, month: fetch_maketicket_month(
+                entrypoint, gd_seq, month, timeout_ms=args.timeout_ms
+            ),
             "donghae": lambda entrypoint, code, dates, *, user, password: fetch_donghae_days(
                 entrypoint, code, dates, user=user, password=password, timeout_ms=args.timeout_ms
             ),

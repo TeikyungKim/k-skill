@@ -31,6 +31,11 @@ helper = load_helper()
 YEONGOK_HTML = (FIXTURES_DIR / "gtdc_yeongok_202608.html").read_text(encoding="utf-8")
 JARASEOM_HTML = (FIXTURES_DIR / "thankq_jaraseom_20260905.html").read_text(encoding="utf-8")
 GMUC_HTML = (FIXTURES_DIR / "gmuc_dodeoksan.html").read_text(encoding="utf-8")
+MAKETICKET_HTML = (FIXTURES_DIR / "maketicket_jangho_202609.html").read_text(encoding="utf-8")
+
+
+def maketicket_fetcher(_entrypoint, _gd_seq, _month):
+    return MAKETICKET_HTML
 
 
 def gmuc_fetcher(_entrypoint):
@@ -469,6 +474,67 @@ class DonghaeCollectTest(unittest.TestCase):
         }
         self.assertEqual(len(codes), 4)
         self.assertEqual(len(set(codes.values())), 4)
+
+
+class ParseMaketicketHtmlTest(unittest.TestCase):
+    def setUp(self):
+        self.days = helper.parse_maketicket_html(MAKETICKET_HTML)
+
+    def test_date_comes_from_the_slot_not_from_position(self):
+        self.assertEqual(sorted(self.days), ["20260901", "20260905"])
+
+    def test_counts_and_names_are_parsed(self):
+        zones = {z["zone"]: z for z in self.days["20260901"]}
+        self.assertEqual(zones["컨테이너하우스(A동)"]["remaining"], 2)
+        self.assertEqual(zones["일반야영장(D동)"]["remaining"], 8)
+
+    def test_zero_is_not_available(self):
+        zones = {z["zone"]: z for z in self.days["20260901"]}
+        self.assertEqual(zones["오토캠핑장(C동)"]["remaining"], 0)
+        self.assertFalse(zones["오토캠핑장(C동)"]["available"])
+
+    def test_zone_name_keeps_its_parentheses(self):
+        self.assertIn("카라반(B동)", {z["zone"] for z in self.days["20260901"]})
+
+    def test_day_cell_without_slots_is_absent(self):
+        self.assertNotIn("20260906", self.days)
+
+    def test_unparsable_page_yields_no_days(self):
+        self.assertEqual(helper.parse_maketicket_html("<html>점검중</html>"), {})
+
+
+class MaketicketCollectTest(unittest.TestCase):
+    def collect(self, dates):
+        return helper.collect_maketicket(
+            helper.PROVIDERS["maketicket-jangho"], dates, maketicket_fetcher
+        )
+
+    def test_days_present_in_the_calendar(self):
+        days, failures = self.collect(("20260901",))
+        self.assertEqual(failures, [])
+        self.assertEqual(days["20260901"]["booking_status"], "open")
+        self.assertEqual(len(days["20260901"]["zones"]), 4)
+
+    def test_missing_date_is_an_explicit_failure_not_silence(self):
+        days, failures = self.collect(("20260906",))
+        self.assertEqual(days, {})
+        self.assertIn("예약 달력에 없다", failures[0]["error"])
+
+    def test_fetch_error_is_not_double_reported_per_date(self):
+        def boom(_entrypoint, _gd_seq, _month):
+            raise RuntimeError("upstream down")
+
+        days, failures = helper.collect_maketicket(
+            helper.PROVIDERS["maketicket-jangho"], ("20260901", "20260905"), boom
+        )
+        self.assertEqual(days, {})
+        self.assertEqual(len(failures), 1, "one month failure, not one per date")
+
+    def test_providers_pin_a_gd_seq_and_need_no_login(self):
+        for pid in ("maketicket-jangho", "maketicket-hyangnam"):
+            provider = helper.PROVIDERS[pid]
+            self.assertTrue(provider.gd_seq)
+            self.assertFalse(provider.requires_login)
 
 
 class ParseGmucHtmlTest(unittest.TestCase):

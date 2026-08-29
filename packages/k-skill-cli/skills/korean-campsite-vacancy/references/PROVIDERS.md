@@ -143,6 +143,49 @@ campseq=1&res_dt=20260905&res_edt=20260905&res_days=1&site_tp=&only_able_yn=
 
 ---
 
+## transport: `maketicket`
+
+스마틱스(smartix)의 **MakeTicket**(`forest.maketicket.co.kr`)을 여러 지자체가 임대해 쓴다. **로그인·캡차·대기열이 전부 없다.**
+
+### 식별 방법
+
+지자체 홈페이지의 예약 버튼이 `forest.maketicket.co.kr/ticket/{gd_seq}`로 나가면 이 어댑터를 재사용할 수 있다. `gd_seq`가 캠핑장 식별자다.
+
+### 데이터 흐름 (2026-08-29 확인)
+
+```
+GET  /ticket/GD41                    → 페이지 JS에 idkey: "5M8190"
+POST /camp/reserve/calendar.jsp      idkey=5M8190&gd_seq=GD41&yyyymmdd=20260901&sd_date=20260901
+```
+
+`yyyymmdd`로 임의 월을 요청할 수 있다. `idkey`는 운영자가 바꿀 수 있으므로 **레지스트리에 하드코딩하지 않고 매번 ticket 페이지에서 읽는다.**
+
+### 파싱 대상 DOM
+
+```html
+<li class='s1'><a href='#' onclick='javascript:f_SelectDateZone( "20260901" , "CM000036" , "SD68940" , "1" , "2" );'>
+  <span>2</span>컨테이너하우스(A동)</a></li>
+<li class='s3 zero'><a href='#' onclick='javascript:f_SelectDateZone( "20260901" , "CM000038" , "SD68940" , "3" , "0" );'>
+  <span>0</span>오토캠핑장(C동)</a></li>
+```
+
+- **첫 인자가 그 슬롯의 전체 날짜**다. `gmuc`처럼 위치로 월을 추론할 필요가 없다
+- 마지막 인자 = 잔여 수. `0`이면 마감이다
+- `<span>` 다음 텍스트가 존 이름. `카라반(B동)`처럼 괄호가 들어간다
+
+달력에 없는 날짜는 예약 미오픈이거나 운영하지 않는 날짜다. **실패로 명시 보고**한다.
+
+### 등록된 사이트
+
+| provider id | gd_seq | 캠핑장 | 운영기관 | 확인 |
+| --- | --- | --- | --- | --- |
+| `maketicket-jangho` | GD41 | 장호비치캠핑장 | 삼척시 | 라이브 확인 완료 |
+| `maketicket-hyangnam` | GD90 | 화성시향남오토캠핑장 | 화성도시공사 | 라이브 확인 완료(조회 시점 달력 비어 있음) |
+
+> **공개 표면이 있으면 그쪽을 쓴다.** 화성 향남은 화성시 통합예약(`yeyak.hscity.go.kr`)에서는 조회부터 로그인 벽이지만, 같은 캠핑장이 MakeTicket에도 올라와 있고 그쪽은 공개다. 로그인 벽을 만나면 다른 공식 표면이 있는지 먼저 확인한다.
+
+---
+
 ## transport: `gmuc`
 
 광명도시공사 도덕산캠핑장이다. **레지스트리에서 가장 가벼운 경로** — 로그인도, 브라우저도, 파라미터도 필요 없다.
@@ -289,7 +332,6 @@ GET /user/reservation/BD_reservation.do?q_year=2026&q_month=10
 
 | 대상 | 시스템 | 막힌 지점 |
 | --- | --- | --- |
-| 화성 향남 오토캠핑장 | 화성특례시 통합예약 (`yeyak.hscity.go.kr`) | 조회 화면이 "로그인 후 이용이 가능합니다"로 막힌다. 계정이 있으면 `donghae`와 비슷한 방식이 가능할 수 있다 |
 | 충주 목계솔밭 외 다수 | **미리해** (`mirihae.com`) | 모든 경로가 `cdn.mirihae.com:9443/entering.html` **웹대기(대기열)** 로 리다이렉트된다. 대기열 뒤에 자동 조회를 붙이지 않는다는 것이 이 스킬의 경계다. 재사용 가치는 가장 크지만(이포보·금은모래·다리안·충주 등 멀티테넌트) 보류한다 |
 | 달서 별빛캠프 | **xticket** (`camp.xticket.kr`) | `shopEncode` 링크가 302 루프를 돈다. 세션 구조 조사 필요. 멀티테넌트로 보여 조사 가치는 있다 |
 | 안산 화랑 오토캠핑장 | 인터파크 + **추첨제** | 선착순이 아니라 추첨이라 "잔여 면수" 모델이 맞지 않는다. 붙이려면 추첨 신청기간·발표일을 다루는 별도 모델이 필요하다 |

@@ -33,6 +33,8 @@
 | `gtdc-ojuk` | 강릉오죽한옥마을(한옥 숙박) | 강릉관광개발공사 | 불필요 |
 | `thankq-jaraseom` | 자라섬캠핑장 | 가평군시설관리공단 | 불필요 |
 | `gmuc-dodeoksan` | 도덕산캠핑장 | 광명도시공사 | 불필요 |
+| `maketicket-jangho` | 장호비치캠핑장 | 삼척시 | 불필요 |
+| `maketicket-hyangnam` | 화성시향남오토캠핑장 | 화성도시공사 | 불필요 |
 | `donghae-mangsang` | 망상오토캠핑리조트 | 동해시시설관리공단 | **필요** |
 | `donghae-mangsang2` | 망상제2오토캠핑장 | 동해시시설관리공단 | **필요** |
 | `donghae-mureung` | 무릉힐링캠핑장 | 동해시시설관리공단 | **필요** |
@@ -43,7 +45,7 @@
 ## 먼저 필요한 것
 
 - Python 3.9+
-- Playwright Chromium — **`dzsmart`(강릉 3곳)·`donghae`(동해 4곳) 경로에만 필요하다.** 자라섬(`thankq`)과 도덕산(`gmuc`)은 표준 라이브러리만으로 조회된다
+- Playwright Chromium — **`dzsmart`(강릉 3곳)·`donghae`(동해 4곳) 경로에만 필요하다.** 자라섬(`thankq`)·도덕산(`gmuc`)·장호비치와 향남(`maketicket`)은 표준 라이브러리만으로 조회된다
 - [공통 설정 가이드](../setup.md) 완료
 
 ```bash
@@ -122,6 +124,26 @@ campseq=1&res_dt=20260905&res_edt=20260905&res_days=1&site_tp=&only_able_yn=
 응답에는 존마다 구버전 마크업이 주석으로 중복돼 들어오므로, 파서는 주석을 먼저 제거한 뒤 존을 센다.
 
 > **플랫폼이 민간인 것과 캠핑장이 민간인 것은 다르다.** 등록 기준은 **운영기관**이다. 자라섬은 가평군시설관리공단이 운영하므로 대상이고, 같은 플랫폼의 사설 캠핑장은 대상이 아니다. dzSmart도 denobiz라는 민간 업체 제품이라는 점에서 사정이 같다. helper는 레지스트리에 등록된 id만 받으므로 `campseq`를 임의로 바꿔 사설 캠핑장을 훑을 경로가 없다.
+
+### `maketicket` — 장호비치 · 화성 향남
+
+스마틱스(smartix)의 **MakeTicket** 플랫폼을 여러 지자체가 임대해 쓴다. 로그인·캡차·대기열이 전부 없고 평범한 form POST로 끝난다.
+
+```
+GET  /ticket/{gd_seq}                → 페이지에서 idkey 추출
+POST /camp/reserve/calendar.jsp      idkey=...&gd_seq=GD41&yyyymmdd=20260901
+```
+
+응답의 각 슬롯이 **자기 날짜를 그대로 들고 있어서** 위치로 월을 추론할 필요가 없다.
+
+```html
+<li class='s1'><a onclick='f_SelectDateZone( "20260901" , "CM000036" , "SD68940" , "1" , "2" );'>
+  <span>2</span>컨테이너하우스(A동)</a></li>
+```
+
+`idkey`는 운영자가 바꿀 수 있으므로 레지스트리에 하드코딩하지 않고 매번 ticket 페이지에서 읽는다. 달력에 없는 날짜는 실패로 명시 보고한다.
+
+> **화성 향남 참고.** 화성시 통합예약(`yeyak.hscity.go.kr`)은 조회부터 로그인을 요구하지만, 같은 캠핑장이 MakeTicket에도 올라와 있고 그쪽은 공개다. 공개 표면이 있으면 그쪽을 쓴다.
 
 ### `gmuc` — 광명 도덕산
 
