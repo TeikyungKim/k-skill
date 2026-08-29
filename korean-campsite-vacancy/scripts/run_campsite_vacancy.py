@@ -91,6 +91,16 @@ PROVIDERS: dict[str, Provider] = {
         note="가평군이 땡큐캠핑 플랫폼에 입점한 형태다. 플랫폼 공통 어댑터를 쓴다.",
         camp_seq="1",
     ),
+    "gmuc-dodeoksan": Provider(
+        id="gmuc-dodeoksan",
+        name="도덕산캠핑장",
+        operator="광명도시공사",
+        entrypoint="https://www.gmuc.co.kr",
+        transport="gmuc",
+        requires_login=False,
+        kind="camping",
+        note="공개 예약현황 페이지가 당월+익월 2개월만 노출한다. 광명시민 추첨 + 그 외 선착순 혼합 운영이다.",
+    ),
     "donghae-mangsang": Provider(
         id="donghae-mangsang",
         name="망상오토캠핑리조트",
@@ -340,6 +350,74 @@ def fetch_month_html(entrypoint: str, month: str, *, timeout_ms: int = DEFAULT_T
             return page.content()
         finally:
             browser.close()
+
+
+# --- transport: gmuc --------------------------------------------------------
+#
+# 광명도시공사 도덕산캠핑장. The reservation-status page is public, server
+# rendered, and needs no login or browser — the cheapest adapter in the registry.
+#
+# The page renders exactly two months (current + next) as two tables, and the
+# JS arrows only toggle between them, so this transport cannot see further out.
+# Dates past that window are reported as out-of-range, never as "no vacancy".
+GMUC_STATUS_PATH = "/user/conn/campReserve.do"
+GMUC_DAY_RE = re.compile(r'<div class="date">\s*(?P<day>\d{1,2})\s*</div>')
+GMUC_ZONE_RE = re.compile(
+    r'<div class="(?P<cls>area|area_done)"><a[^>]*>(?P<name>[^<:]+?)\s*:\s*(?P<state>[^<]*?)</a></div>'
+)
+
+
+def parse_gmuc_html(html: str, *, first_month: str, second_month: str) -> dict[str, list[dict[str, Any]]]:
+    """Parse the two rendered month tables into ``{YYYYMMDD: zones}``.
+
+    The page carries no month caption next to the grid, so the caller supplies
+    which two months are rendered. The day sequence restarting (…31, 1, 2…) marks
+    the boundary between them.
+    """
+    days: dict[str, list[dict[str, Any]]] = {}
+    matches = list(GMUC_DAY_RE.finditer(html))
+    if not matches:
+        return days
+
+    month = first_month
+    previous_day = 0
+    for index, match in enumerate(matches):
+        day = int(match.group("day"))
+        if day < previous_day:
+            # the grid rolled over into the second rendered month
+            month = second_month
+        previous_day = day
+
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(html)
+        cell = html[match.end():end]
+
+        zones: list[dict[str, Any]] = []
+        for zone_index, zone in enumerate(GMUC_ZONE_RE.finditer(cell)):
+            state = strip_tags(zone.group("state"))
+            remaining = int(state) if state.isdigit() else None
+            if zone.group("cls") == "area_done":
+                remaining = None
+            zones.append(
+                {
+                    "zone_id": str(zone_index + 1),
+                    "zone": strip_tags(zone.group("name")),
+                    "remaining": remaining,
+                    "available": remaining is not None and remaining > 0,
+                }
+            )
+        if zones:
+            days[f"{month}{day:02d}"] = zones
+
+    return days
+
+
+def fetch_gmuc_page(entrypoint: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> str:
+    request = urllib.request.Request(
+        entrypoint.rstrip("/") + GMUC_STATUS_PATH,
+        headers={"User-Agent": USER_AGENT},
+    )
+    with urllib.request.urlopen(request, timeout=timeout_ms / 1000) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 
 # --- transport: donghae -----------------------------------------------------
@@ -728,6 +806,55 @@ def collect_donghae(
     return days, failures
 
 
+def collect_gmuc(
+    provider: Provider,
+    dates: tuple[str, ...],
+    fetch: Callable[[str], str],
+    *,
+    today: date | None = None,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
+    """One public page load; it already carries the current and next month."""
+    days: dict[str, dict[str, Any]] = {}
+    failures: list[dict[str, str]] = []
+
+    try:
+        html = fetch(provider.entrypoint)
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+        failures.append({"provider": provider.id, "scope": "page", "error": describe(exc)})
+        return days, failures
+
+    anchor_day = today or date.today()
+    first_month = anchor_day.strftime("%Y%m")
+    next_month_day = (anchor_day.replace(day=28) + timedelta(days=7)).replace(day=1)
+    second_month = next_month_day.strftime("%Y%m")
+
+    parsed = parse_gmuc_html(html, first_month=first_month, second_month=second_month)
+    for use_dt in dates:
+        zones = parsed.get(use_dt)
+        if zones is None:
+            failures.append(
+                {
+                    "provider": provider.id,
+                    "scope": use_dt,
+                    "error": (
+                        "공개 예약현황이 당월+익월만 노출한다. "
+                        f"{first_month}/{second_month} 범위 밖이라 조회할 수 없다"
+                    ),
+                }
+            )
+            continue
+        days[use_dt] = {
+            "use_dt": use_dt,
+            "season": None,
+            "booking_status": "open",
+            "zones": zones,
+        }
+
+    return days, failures
+
+
 def describe(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {exc}"
 
@@ -744,6 +871,7 @@ def collect_results(
         "dzsmart": fetch_month_html,
         "thankq": fetch_thankq_day,
         "donghae": fetch_donghae_days,
+        "gmuc": fetch_gmuc_page,
         **(fetchers or {}),
     }
 
@@ -768,6 +896,8 @@ def collect_results(
             day_rows, provider_failures = collect_thankq(provider, dates, fetch)
         elif provider.transport == "donghae":
             day_rows, provider_failures = collect_donghae(provider, dates, fetch)
+        elif provider.transport == "gmuc":
+            day_rows, provider_failures = collect_gmuc(provider, dates, fetch)
         else:
             day_rows, provider_failures = collect_dzsmart(provider, dates, fetch)
         failures.extend(provider_failures)
@@ -916,6 +1046,7 @@ def main(argv: list[str] | None = None) -> int:
             "thankq": lambda entrypoint, camp_seq, use_dt: fetch_thankq_day(
                 entrypoint, camp_seq, use_dt, timeout_ms=args.timeout_ms
             ),
+            "gmuc": lambda entrypoint: fetch_gmuc_page(entrypoint, timeout_ms=args.timeout_ms),
             "donghae": lambda entrypoint, code, dates, *, user, password: fetch_donghae_days(
                 entrypoint, code, dates, user=user, password=password, timeout_ms=args.timeout_ms
             ),

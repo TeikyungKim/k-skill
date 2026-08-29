@@ -30,6 +30,11 @@ helper = load_helper()
 
 YEONGOK_HTML = (FIXTURES_DIR / "gtdc_yeongok_202608.html").read_text(encoding="utf-8")
 JARASEOM_HTML = (FIXTURES_DIR / "thankq_jaraseom_20260905.html").read_text(encoding="utf-8")
+GMUC_HTML = (FIXTURES_DIR / "gmuc_dodeoksan.html").read_text(encoding="utf-8")
+
+
+def gmuc_fetcher(_entrypoint):
+    return GMUC_HTML
 
 
 def fixture_fetcher(_entrypoint, _month):
@@ -464,6 +469,92 @@ class DonghaeCollectTest(unittest.TestCase):
         }
         self.assertEqual(len(codes), 4)
         self.assertEqual(len(set(codes.values())), 4)
+
+
+class ParseGmucHtmlTest(unittest.TestCase):
+    def setUp(self):
+        self.days = helper.parse_gmuc_html(
+            GMUC_HTML, first_month="202608", second_month="202609"
+        )
+
+    def test_day_rollover_switches_to_the_second_month(self):
+        self.assertEqual(
+            sorted(self.days), ["20260829", "20260830", "20260831", "20260901", "20260906"]
+        )
+
+    def test_area_done_reads_as_sold_out(self):
+        zones = {z["zone"]: z for z in self.days["20260829"]}
+        self.assertIsNone(zones["A구역"]["remaining"])
+        self.assertFalse(zones["A구역"]["available"])
+
+    def test_area_keeps_the_remaining_count(self):
+        zones = {z["zone"]: z for z in self.days["20260830"]}
+        self.assertEqual(zones["A구역"]["remaining"], 11)
+        self.assertTrue(zones["A구역"]["available"])
+
+    def test_mixed_cell_keeps_both_states(self):
+        zones = {z["zone"]: z for z in self.days["20260831"]}
+        self.assertEqual(zones["A구역"]["remaining"], 21)
+        self.assertIsNone(zones["B구역"]["remaining"])
+
+    def test_zero_remaining_is_not_available(self):
+        zones = {z["zone"]: z for z in self.days["20260901"]}
+        self.assertEqual(zones["A구역"]["remaining"], 0)
+        self.assertFalse(zones["A구역"]["available"])
+        self.assertTrue(zones["B구역"]["available"])
+
+    def test_empty_cells_are_skipped(self):
+        self.assertNotIn("20260800", self.days)
+
+    def test_unparsable_page_yields_no_days(self):
+        self.assertEqual(
+            helper.parse_gmuc_html("<html>점검중</html>", first_month="202608", second_month="202609"),
+            {},
+        )
+
+
+class GmucCollectTest(unittest.TestCase):
+    """Pin `today` so these stay green after 2026-09; the page window moves."""
+
+    ANCHOR = date(2026, 8, 29)
+
+    def collect(self, dates):
+        return helper.collect_gmuc(
+            helper.PROVIDERS["gmuc-dodeoksan"], dates, gmuc_fetcher, today=self.ANCHOR
+        )
+
+    def test_days_inside_the_window_are_returned(self):
+        days, failures = self.collect(("20260830", "20260906"))
+        self.assertEqual(sorted(days), ["20260830", "20260906"])
+        self.assertEqual(failures, [])
+        self.assertEqual(days["20260830"]["booking_status"], "open")
+        self.assertEqual(len(days["20260830"]["zones"]), 2)
+
+    def test_date_outside_the_two_month_window_is_an_explicit_failure(self):
+        days, failures = self.collect(("20261002",))
+        self.assertEqual(days, {})
+        self.assertEqual(len(failures), 1)
+        self.assertIn("당월+익월", failures[0]["error"])
+        self.assertEqual(failures[0]["scope"], "20261002")
+
+    def test_page_error_is_reported_not_swallowed(self):
+        def boom(_entrypoint):
+            raise RuntimeError("upstream down")
+
+        days, failures = helper.collect_gmuc(
+            helper.PROVIDERS["gmuc-dodeoksan"], ("20260830",), boom, today=self.ANCHOR
+        )
+        self.assertEqual(days, {})
+        self.assertIn("upstream down", failures[0]["error"])
+
+    def test_year_rollover_is_handled(self):
+        html = GMUC_HTML.replace('class="date">29<', 'class="date">31<')
+        days = helper.parse_gmuc_html(html, first_month="202612", second_month="202701")
+        self.assertTrue(any(k.startswith("2027") for k in days), sorted(days))
+
+    def test_needs_no_credentials(self):
+        self.assertFalse(helper.PROVIDERS["gmuc-dodeoksan"].requires_login)
+        self.assertIsNone(helper.PROVIDERS["gmuc-dodeoksan"].credential_env)
 
 
 class ClassifyDonghaeLabelTest(unittest.TestCase):

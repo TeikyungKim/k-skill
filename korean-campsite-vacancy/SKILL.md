@@ -1,6 +1,6 @@
 ---
 name: korean-campsite-vacancy
-description: Look up vacancy at Korean municipal and public campgrounds (연곡해변·강릉바다내음·자라섬·망상 등) through a provider adapter registry, and point at foresttrip-vacancy for 국립자연휴양림. Read-only.
+description: Look up vacancy at Korean municipal and public campgrounds (연곡해변·자라섬·망상·도덕산 등) through a provider adapter registry, and point at foresttrip-vacancy for 국립자연휴양림. Read-only.
 license: MIT
 metadata:
   category: travel
