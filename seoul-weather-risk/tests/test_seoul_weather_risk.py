@@ -82,8 +82,10 @@ class MockApi:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 parsed = urlparse(self.path)
-                api.requests.append({"path": parsed.path, "query": parse_qs(parsed.query), "authorization": self.headers.get("Authorization")})
-                status, content_type, body, headers = api.responses.get(parsed.path, (404, "application/problem+json", {"code": "unknown_product", "detail": "not found"}, {}))
+                query = parse_qs(parsed.query)
+                api.requests.append({"path": parsed.path, "query": query, "authorization": self.headers.get("Authorization")})
+                entry = api.responses.get(parsed.path, (404, "application/problem+json", {"code": "unknown_product", "detail": "not found"}, {}))
+                status, content_type, body, headers = entry(query) if callable(entry) else entry
                 encoded = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", content_type)
@@ -109,6 +111,39 @@ class MockApi:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
+
+
+class QueryWindowClipTests(unittest.TestCase):
+    def test_window_sort_key_normalizes_iso_and_timezone_suffix(self):
+        self.assertEqual(
+            seoul_weather_risk._window_sort_key("2026-08-24T17:00:00+09:00"),
+            "2026-08-24 17:00:00",
+        )
+        self.assertEqual(
+            seoul_weather_risk._window_sort_key("2026-08-24 17:00:00"),
+            "2026-08-24 17:00:00",
+        )
+
+    def test_intersect_query_window_clips_to_overlap(self):
+        self.assertEqual(
+            seoul_weather_risk._intersect_query_window(
+                "2026-08-24 00:00:00",
+                "2026-08-24 23:59:59",
+                "2026-08-24 17:00:00",
+                "2026-08-27 00:00:00",
+            ),
+            ("2026-08-24 17:00:00", "2026-08-24 23:59:59"),
+        )
+
+    def test_intersect_query_window_returns_none_when_ranges_do_not_overlap(self):
+        self.assertIsNone(
+            seoul_weather_risk._intersect_query_window(
+                "2026-08-11 00:00:00",
+                "2026-08-17 23:59:59",
+                "2026-08-24 17:00:00",
+                "2026-08-27 00:00:00",
+            )
+        )
 
 
 class ApiClientTests(unittest.TestCase):
@@ -210,6 +245,128 @@ class ApiClientTests(unittest.TestCase):
             "limit": ["100"],
         })
 
+    def test_query_clips_calendar_day_to_available_window(self):
+        def data_response(query):
+            if query.get("from") == ["2026-08-24 00:00:00"] and query.get("to") == ["2026-08-24 23:59:59"]:
+                return (422, "application/problem+json", {
+                    "title": "query window unavailable",
+                    "status": 422,
+                    "detail": {
+                        "requested_from_at": "2026-08-24 00:00:00",
+                        "requested_to_at": "2026-08-24 23:59:59",
+                        "available_from_at": "2026-08-24 17:00:00",
+                        "available_to_at": "2026-08-27 00:00:00",
+                        "publication_id": "publication-1",
+                    },
+                }, {})
+            if query.get("from") == ["2026-08-24 17:00:00"] and query.get("to") == ["2026-08-24 23:59:59"]:
+                return (200, "application/json", data(), {})
+            return (500, "application/json", {"error": "unexpected query"}, {})
+
+        self.api.responses["/v1/ask-seoul/weather-risk/data"] = data_response
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = seoul_weather_risk.run([
+                "query", "--fast", "--product-id", PRODUCT_ID,
+                "--admin-dong", "잠실본동", "--from", "2026-08-24", "--to", "2026-08-24", "--limit", "100",
+            ])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout.getvalue())["row_count"], 1)
+        self.assertEqual([request["path"] for request in self.api.requests], [
+            "/v1/ask-seoul/weather-risk/data",
+            "/v1/ask-seoul/weather-risk/data",
+        ])
+        self.assertEqual(self.api.requests[0]["query"]["from"], ["2026-08-24 00:00:00"])
+        self.assertEqual(self.api.requests[0]["query"]["to"], ["2026-08-24 23:59:59"])
+        self.assertEqual(self.api.requests[1]["query"], {
+            "place_id": ["seoul_admd_1171065000"],
+            "from": ["2026-08-24 17:00:00"],
+            "to": ["2026-08-24 23:59:59"],
+            "limit": ["100"],
+        })
+
+    def test_query_window_without_overlap_fails_with_available_bounds(self):
+        self.api.responses["/v1/ask-seoul/weather-risk/data"] = (
+            422,
+            "application/problem+json",
+            {
+                "title": "query window unavailable",
+                "status": 422,
+                "request_id": "req-window",
+                "detail": {
+                    "requested_from_at": "2026-08-11 00:00:00",
+                    "requested_to_at": "2026-08-17 23:59:59",
+                    "available_from_at": "2026-08-24 17:00:00",
+                    "available_to_at": "2026-08-27 00:00:00",
+                    "publication_id": "publication-1",
+                },
+            },
+            {},
+        )
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = seoul_weather_risk.run([
+                "query", "--fast", "--product-id", PRODUCT_ID,
+                "--admin-dong", "잠실본동", "--from", "2026-08-11", "--to", "2026-08-17",
+            ])
+
+        error = json.loads(stderr.getvalue())["error"]
+        self.assertEqual(code, 2)
+        self.assertEqual(error["code"], "query_window_unavailable")
+        self.assertIn("겹치지 않습니다", error["message"])
+        self.assertEqual(error["details"]["available_from_at"], "2026-08-24 17:00:00")
+        self.assertEqual(error["details"]["available_to_at"], "2026-08-27 00:00:00")
+        self.assertEqual(error["details"]["request_id"], "req-window")
+        self.assertEqual(len(self.api.requests), 1)
+
+    def test_query_window_problem_without_available_bounds_does_not_retry(self):
+        self.api.responses["/v1/ask-seoul/weather-risk/data"] = (
+            422,
+            "application/problem+json",
+            {"title": "query window unavailable", "detail": "safe problem detail", "code": "query_window_unavailable"},
+            {},
+        )
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = seoul_weather_risk.run([
+                "query", "--fast", "--product-id", PRODUCT_ID,
+                "--admin-dong", "잠실본동", "--from", "2026-08-24", "--to", "2026-08-24",
+            ])
+
+        error = json.loads(stderr.getvalue())["error"]
+        self.assertEqual(code, 2)
+        self.assertEqual(error["code"], "query_window_unavailable")
+        self.assertEqual(error["message"], "safe problem detail")
+        self.assertEqual(len(self.api.requests), 1)
+
+    def test_paged_query_does_not_retry_unavailable_window(self):
+        self.api.responses["/v1/ask-seoul/weather-risk/data"] = (
+            422,
+            "application/problem+json",
+            {
+                "title": "query window unavailable",
+                "status": 422,
+                "detail": {
+                    "requested_from_at": "2026-08-24 00:00:00",
+                    "requested_to_at": "2026-08-24 23:59:59",
+                    "available_from_at": "2026-08-24 17:00:00",
+                    "available_to_at": "2026-08-27 00:00:00",
+                },
+            },
+            {},
+        )
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = seoul_weather_risk.run([
+                "query", "--fast", "--product-id", PRODUCT_ID,
+                "--admin-dong", "잠실본동", "--from", "2026-08-24", "--to", "2026-08-24",
+                "--cursor", "cursor-1",
+            ])
+
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(stderr.getvalue())["error"]["code"], "query_window_unavailable")
+        self.assertEqual(len(self.api.requests), 1)
 
     def test_query_maps_admin_dong_to_place_id_before_proxy_request(self):
         self.api.responses["/v1/ask-seoul/weather-risk/data"] = (

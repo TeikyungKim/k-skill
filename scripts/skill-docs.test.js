@@ -283,7 +283,7 @@ test("every top-level skill is a generated CLI stub", () => {
     .filter((name) => fs.existsSync(path.join(repoRoot, name, "SKILL.md")))
     .sort();
 
-  assert.equal(skillDirs.length, 119);
+  assert.equal(skillDirs.length, 122);
 
   for (const skillName of skillDirs) {
     const skill = readRaw(path.join(skillName, "SKILL.md"));
@@ -733,6 +733,42 @@ test("repository docs advertise the public-restroom-nearby skill", () => {
   assert.match(readme, /\[근처 공중화장실 찾기 가이드\]\(docs\/features\/public-restroom-nearby\.md\)/);
   assert.match(install, /--skill public-restroom-nearby/);
   assert.match(install, /npm install -g .*public-restroom-nearby/);
+});
+
+test("repository docs advertise the animal pharmacy search skill", () => {
+  const readme = read("README.md");
+  const install = read(path.join("docs", "install.md"));
+  const sources = read(path.join("docs", "sources.md"));
+  const featureDocPath = path.join(repoRoot, "docs", "features", "animal-pharmacy-search.md");
+  const skillPath = path.join(repoRoot, "animal-pharmacy-search", "SKILL.md");
+
+  assert.ok(fs.existsSync(featureDocPath), "expected docs/features/animal-pharmacy-search.md to exist");
+  assert.ok(fs.existsSync(skillPath), "expected animal-pharmacy-search/SKILL.md to exist");
+  assert.match(readme, /\| 동물약국·동물용의약품 취급 약국 조회 \|/);
+  assert.match(
+    readme,
+    /\[동물약국·동물용의약품 취급 약국 조회 가이드\]\(docs\/features\/animal-pharmacy-search\.md\)/,
+  );
+  assert.match(install, /--skill animal-pharmacy-search/);
+  assert.match(sources, /https:\/\/hkmedi\.co\.kr\/pharmacy-mcp/);
+});
+
+test("animal pharmacy docs preserve the private distributor provenance boundary", () => {
+  const skill = read(path.join("animal-pharmacy-search", "SKILL.md"));
+  const featureDoc = read(path.join("docs", "features", "animal-pharmacy-search.md"));
+
+  for (const doc of [skill, featureDoc]) {
+    assert.match(doc, /홍익메디케어/);
+    assert.match(doc, /최근 6개월/);
+    assert.match(doc, /구매 이력|구매이력/);
+    assert.match(doc, /재고.*보장|보장.*재고/);
+    assert.match(doc, /전화.*확인|확인.*전화/);
+    assert.match(doc, /민간|private/i);
+    assert.match(doc, /진단|처방/);
+    assert.match(doc, /find_animal_pharmacies/);
+    assert.match(doc, /search_product/);
+    assert.match(doc, /find_pharmacies_by_product/);
+  }
 });
 
 test("public-restroom-nearby docs describe the maxDistanceMeters distance cap", () => {

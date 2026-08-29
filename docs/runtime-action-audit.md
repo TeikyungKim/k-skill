@@ -1,23 +1,24 @@
 # Runtime Action Audit
 
-2026-08-01 기준 top-level `SKILL.md` 119개를 돌쇠 우선 실행 계약으로 전수 검토한 결과다. 이 표는 스킬 선택/분류용이며 실제 portable 계약은 각 `SKILL.md`의 `## Runtime contract (required)` 블록이 담당한다.
+2026-08-25 기준 top-level `SKILL.md` 122개를 돌쇠 우선 실행 계약으로 전수 검토한 결과다. 이 표는 스킬 선택/분류용이며 실제 portable 계약은 각 `SKILL.md`의 `## Runtime contract (required)` 블록이 담당한다.
 
 ## Mode definitions
 
 - **commerce** (12): 공식 상품 선택 → 장바구니/checkout 준비 → `clarify` 후 주문·결제
 - **booking** (12): 공식 일정/좌석 선택 → 예약·선점 → `clarify` 후 필요한 결제
-- **submission** (11): 공식 폼·첨부 준비 → `clarify` 후 제출/지원/결제/취소
+- **submission** (12): 공식 폼·첨부 준비 → `clarify` 후 제출/지원/결제/취소
 - **recruiting** (2): 기업 인재검색 → shortlist → 유료 열람/제안 직전 `clarify`
 - **account** (2): 지원되는 계정 작업 수행 → 비가역 변경 직전 `clarify`
 - **legal** (7): 공식 법률·정부 표면의 로그인/인증/서류 준비를 진행하고 `clarify` 후 제출·입찰·수수료 결제
 - **operations** (1): k-skill 설치·업데이트·복구·런타임 연결을 실제 적용하고 검증
 - **local** (12): 요청 산출물을 로컬에서 실제 생성·변환·정리
-- **lookup** (60): 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결
+- **lookup** (62): 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결
 
 ## Complete catalog
 
 | Skill | Mode | Dolshoi completion target |
 | --- | --- | --- |
+| `animal-pharmacy-search` | `lookup` | 지역별 동물약국·제품·최근 6개월 구매 이력 기반 취급 약국 조회 완료 |
 | `assembly-bill-vote-search` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `biz-health-check` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `bok-ecos-stats` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
@@ -51,6 +52,7 @@
 | `geeknews-search` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `gongsijiga-search` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `gov-overseas-trip-report` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
+| `government-support-survey` | `submission` | 정부지원 공고 전수조사와 신청 요건 확인 후 공식 신청서·첨부를 준비하고 `clarify` 후 제출 |
 | `han-river-water-level` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `hankookilbo-news` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `highway-traffic-status` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
@@ -81,6 +83,7 @@
 | `korean-cinema-search` | `booking` | 공식 일정/좌석 선택 → 예약·선점 → `clarify` 후 필요한 결제 |
 | `korean-heritage-search` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `korean-holiday-calendar` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
+| `kamis-food-price` | `lookup` | KAMIS 농수축산물 도소매 가격과 비교값 조회 완료 |
 | `korean-humanizer` | `local` | 요청 산출물을 로컬에서 실제 생성·변환·정리 |
 | `korean-jangbu-for` | `submission` | 공식 폼·첨부 준비 → `clarify` 후 제출/결제/취소 |
 | `korean-law-search` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
@@ -106,6 +109,7 @@
 | `mfds-drug-safety` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `mfds-food-safety` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `myrealtrip-search` | `booking` | 공식 일정/좌석 선택 → 예약·선점 → `clarify` 후 필요한 결제 |
+| `mofa-travel-safety` | `lookup` | 외교부 국가·지역별 공식 여행경보 조회 완료 |
 | `naming-house` | `local` | 요청 산출물을 로컬에서 실제 생성·변환·정리 |
 | `national-pension-workplace` | `lookup` | 요청한 조회를 완료하고, 별도 후속 행동 요청 시 지원되는 공식 표면으로 연결 |
 | `naver-ad-performance` | `account` | 지원되는 계정 작업 수행 → 비가역 변경 직전 `clarify` |

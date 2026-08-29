@@ -82,6 +82,7 @@ npx --yes skills add NomaDamas/k-skill \
   --skill ev-charger-nearby \
   --skill ev-subsidy-status \
   --skill emergency-room-beds \
+  --skill animal-pharmacy-search \
   --skill fine-dust-location \
   --skill han-river-water-level \
   --skill subway-lost-property \

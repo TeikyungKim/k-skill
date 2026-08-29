@@ -43,7 +43,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 | KTX 공식 시간표 조회 | `ktx-booking` | 코레일 공개 XLSX 기반 계획 시간표 조회 전용 | 불필요 | [KTX 공식 시간표 조회 가이드](docs/features/ktx-booking.md) |
 | 고속버스 예매 | `express-bus-booking` | KOBUS 배차·좌석·요금·임시 선점 조회와 예매 지원 | 필요 | [고속버스 예매 가이드](docs/features/express-bus-booking.md) |
 | 시외버스 예매 | `intercity-bus-booking` | 티머니 배차·좌석·요금·임시 선점 조회와 예매 지원 | 필요 | [시외버스 예매 가이드](docs/features/intercity-bus-booking.md) |
-| 자연휴양림 빈 객실 조회 | `foresttrip-vacancy` | 공식 숲나들e 빈 객실 조회와 예약 지원 | 필요 | [자연휴양림 빈 객실 조회 가이드](docs/features/foresttrip-vacancy.md) |
+| 자연휴양림 빈 객실 조회 | `foresttrip-vacancy` | 공식 빈 객실 조회와 CAPTCHA 전 시설 선택·결제 직전 수동 인계 | 필요 | [자연휴양림 빈 객실 조회 가이드](docs/features/foresttrip-vacancy.md) |
 | 지자체 캠핑장 빈자리 조회 | `korean-campsite-vacancy` | 연곡해변 솔향기·자라섬·망상·광명 도덕산·삼척 장호비치 등 지자체 운영 캠핑장의 날짜별 존 잔여 면수 조회 (provider adapter 방식, 조회 전용) | 일부 필요(동해시 4곳) | [지자체 캠핑장 빈자리 조회 가이드](docs/features/korean-campsite-vacancy.md) |
 | 카카오톡 Mac 아카이브 검색 | `kakaotalk-mac` | `katok`으로 macOS 카카오톡 로컬 아카이브를 동기화하고 keyword/BM25/semantic 검색 | 불필요(로컬 앱/권한 필요) | [카카오톡 Mac 아카이브 검색](docs/features/kakaotalk-mac.md) |
 | 서울 지하철 도착정보 조회 | `seoul-subway-arrival` | 서울 지하철 역 기준 실시간 도착 예정 열차 확인 | 불필요 | [서울 지하철 도착정보 가이드](docs/features/seoul-subway-arrival.md) |
@@ -55,6 +55,8 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 | 긱뉴스 조회 | `geeknews-search` | GeekNews 공개 RSS/Atom 피드 기반 최신 글 목록, 검색, 상세 확인 | 불필요 | [긱뉴스 조회 가이드](docs/features/geeknews-search.md) |
 | 한국 날씨 조회 | `korea-weather` | 기상청 단기예보 기반 한국 날씨 조회 | 불필요 | [한국 날씨 조회 가이드](docs/features/korea-weather.md) |
 | 한국 공휴일·특일 조회 | `korean-holiday-calendar` | 한국천문연구원 특일 정보로 공휴일·국경일·기념일·24절기·잡절 조회 (공공데이터포털 15012690, 프록시 경유) | 불필요 | [한국 공휴일·특일 조회 가이드](docs/features/korean-holiday-calendar.md) |
+| KAMIS 농수축산물 가격 조회 | `kamis-food-price` | KAMIS 공식 농수축산물 도매·소매 가격과 기간 비교값 조회 (프록시 경유) | 불필요 | [KAMIS 농수축산물 가격 조회 가이드](docs/features/kamis-food-price.md) |
+| 외교부 해외안전·여행경보 조회 | `mofa-travel-safety` | 외교부 0404 국가·지역별 공식 여행경보와 경보 내용 조회 (프록시 경유) | 불필요 | [외교부 해외안전·여행경보 조회 가이드](docs/features/mofa-travel-safety.md) |
 | 서울 기상 위험 시간대 조회 | `seoul-weather-risk` | ASK 서울 Marketplace의 장소별 폭염·한파·호우·대설·강풍 후보 예보 시간대와 판정 근거 조회 (기상청 공식 특보 아님) | 불필요 (hosted proxy) | [서울 기상 위험 시간대 조회 가이드](docs/features/seoul-weather-risk.md) |
 | 사용자 위치 미세먼지 조회 | `fine-dust-location` | 현재 위치 또는 지역 기준 PM10/PM2.5 미세먼지 조회 | 불필요 | [사용자 위치 미세먼지 조회 가이드](docs/features/fine-dust-location.md) |
 | 한강 수위 정보 조회 | `han-river-water-level` | 한강 관측소 기준 현재 수위·유량·기준수위 확인 | 불필요 | [한강 수위 정보 가이드](docs/features/han-river-water-level.md) |
@@ -74,6 +76,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 | 인허가 영업상태 조회 | `localdata-business-status` | 상호+시군구로 동네 사업장(208업종)의 영업/휴업/폐업·업력·주소 조회(LOCALDATA 무인증) | 불필요 | [인허가 영업상태 조회 가이드](docs/features/localdata-business-status.md) |
 | 장수 점포 레이더 | `store-longevity-radar` | 상가(상권)정보 공개파일(무인증)로 업종·상호 키워드 점포 전수를 뽑고, 과거 스냅샷과 상호+좌표 매칭해 장수 점포 추출 | 불필요 | [장수 점포 레이더 가이드](docs/features/store-longevity-radar.md) |
 | 창업진흥원 K-Startup 조회 | `kstartup-search` | 창업진흥원 K-Startup 통합공고 사업·지원사업 공고·창업 콘텐츠·통계보고서 조회 (공공데이터포털 15125364, 프록시 경유) | 불필요 | [창업진흥원 K-Startup 조회 가이드](docs/features/kstartup-search.md) |
+| 정부지원 전수조사 | `government-support-survey` | K-Startup·기업마당·NIPA·KOCCA·SMTECH 공개 공고를 통합 조회하고 소스별 완전성·공식 링크와 함께 프로젝트 적합성을 보수적으로 검토 | 불필요 | [정부지원 전수조사 가이드](docs/features/government-support-survey.md) |
 | 국회 의안·표결 조회 | `assembly-bill-vote-search` | 열린국회정보 Open API로 의안 검색·상세와 국회의원 본회의 표결 조회 (프록시 경유, 조회 전용) | 불필요 | [국회 의안·표결 조회 가이드](docs/features/assembly-bill-vote-search.md) |
 | 공무국외출장 보고서 조회 | `gov-overseas-trip-report` | 선관위·권익위·정보공개포털·대구/대전/경기/경북 의회 등 공개 표면에서 국외출장/훈련 보고서·현황을 조회하고, 표 밖 기관은 discover로 능동 탐색(로그인 벽 제외, 판정 아님) | 불필요 | [공무국외출장 보고서 조회 가이드](docs/features/gov-overseas-trip-report.md) |
 | 한국 사업자 장부 자동화 | `korean-jangbu-for` | `kimlawtech/korean-jangbu-for` 기반 카드·은행·영수증·세금계산서 입력 → 표준 거래내역·계정과목·세무사 전달 CSV·경영 리포트 생성 thin wrapper | 선택사항(CODEF BYOK 자동 수집 시 필요) | [한국 사업자 장부 자동화 가이드](docs/features/korean-jangbu-for.md) |
@@ -114,6 +117,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 | 고속도로 교통량·소통·CCTV 조회 | `highway-traffic-status` | 한국도로공사·ITS 공개 API로 고속도로 구간별 실시간 속도/교통량/정체 등급과 CCTV 스트림 메타데이터 조회 | 불필요 | [고속도로 교통량·소통·CCTV 조회 가이드](docs/features/highway-traffic-status.md) |
 | 근처 응급실 병상 상태 확인 | `emergency-room-beds` | 현재 위치 기준 가까운 응급실 운영·입원실/병상 운영 플래그와 갱신시각 조회 (정확한 잔여 병상 수/가동률은 공개 E-Gen nearby 목록에 없음) | 불필요 | [근처 응급실 병상 상태 확인 가이드](docs/features/emergency-room-beds.md) |
 | 장기요양·건강검진기관 조회 | `nhis-care-checkup-search` | 국민건강보험공단 장기요양기관·건강검진기관 공개 후보 조회 (공공데이터포털 15059029·15154419, 프록시 경유) | 불필요 | [장기요양·건강검진기관 조회 가이드](docs/features/nhis-care-checkup-search.md) |
+| 동물약국·동물용의약품 취급 약국 조회 | `animal-pharmacy-search` | 홍익메디케어 공개 MCP로 지역별 동물약국, 제품 검색, 최근 6개월 구매 이력 기반 취급 약국 조회 | 불필요 | [동물약국·동물용의약품 취급 약국 조회 가이드](docs/features/animal-pharmacy-search.md) |
 | 한국 마라톤 일정 조회 | `korean-marathon-schedule` | 고러닝 공개 페이지와 대한철인3종협회 일정에서 마라톤·철인3종 대회 일정, 장소, 신청 마감일, 종목 조회 | 불필요 | [한국 마라톤 일정 조회 가이드](docs/features/korean-marathon-schedule.md) |
 | KBO 경기 결과 조회 | `kbo-results` | 날짜별 KBO 경기 일정, 결과, 팀별 필터링 | 불필요 | [KBO 결과 가이드](docs/features/kbo-results.md) |
 | KBL 경기 결과 조회 | `kbl-results` | 날짜별 KBL 경기 일정, 결과, 팀별 필터링, 현재 순위 확인 | 불필요 | [KBL 경기 결과 가이드](docs/features/kbl-results.md) |
@@ -209,6 +213,8 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 - [긱뉴스 조회 가이드](docs/features/geeknews-search.md)
 - [한국 날씨 조회 가이드](docs/features/korea-weather.md)
 - [한국 공휴일·특일 조회 가이드](docs/features/korean-holiday-calendar.md)
+- [KAMIS 농수축산물 가격 조회 가이드](docs/features/kamis-food-price.md)
+- [외교부 해외안전·여행경보 조회 가이드](docs/features/mofa-travel-safety.md)
 - [서울 기상 위험 시간대 조회 가이드](docs/features/seoul-weather-risk.md)
 - [사용자 위치 미세먼지 조회](docs/features/fine-dust-location.md)
 - [한강 수위 정보 가이드](docs/features/han-river-water-level.md)
@@ -258,6 +264,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 - [전기차 보조금 현황 조회 가이드](docs/features/ev-subsidy-status.md)
 - [근처 응급실 병상 상태 확인 가이드](docs/features/emergency-room-beds.md)
 - [장기요양·건강검진기관 조회 가이드](docs/features/nhis-care-checkup-search.md)
+- [동물약국·동물용의약품 취급 약국 조회 가이드](docs/features/animal-pharmacy-search.md)
 - [한국 마라톤 일정 조회 가이드](docs/features/korean-marathon-schedule.md)
 - [KBO 경기 결과 조회](docs/features/kbo-results.md)
 - [KBL 경기 결과 가이드](docs/features/kbl-results.md)

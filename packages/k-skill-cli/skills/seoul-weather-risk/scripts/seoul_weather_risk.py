@@ -33,9 +33,18 @@ STATUS_CODES = {
     403: "forbidden",
     404: "unknown_product",
     409: "cursor_expired",
+    422: "query_window_unavailable",
     429: "rate_limited",
     503: "product_not_ready",
 }
+WINDOW_INSTANT_LENGTH = len("YYYY-MM-DD HH:MM:SS")
+QUERY_WINDOW_DETAIL_FIELDS = (
+    "requested_from_at",
+    "requested_to_at",
+    "available_from_at",
+    "available_to_at",
+    "publication_id",
+)
 
 
 class SkillError(RuntimeError):
@@ -89,13 +98,20 @@ def _error_payload(raw: bytes) -> dict[str, Any]:
 def _problem_error(status: int, raw: bytes, headers: Any) -> SkillError:
     problem = _error_payload(raw)
     code = problem.get("code") if isinstance(problem.get("code"), str) else STATUS_CODES.get(status, "api_error")
-    message = problem.get("detail") if isinstance(problem.get("detail"), str) else problem.get("title")
+    raw_detail = problem.get("detail")
+    message = raw_detail if isinstance(raw_detail, str) else problem.get("title")
     if not isinstance(message, str) or not message:
         message = f"ASK Seoul API가 HTTP {status} 응답을 반환했습니다."
-    details = {"status": status}
+    details: dict[str, Any] = {"status": status}
     for name in ("type", "title", "product_id", "blockers", "request_id"):
         if name in problem:
             details[name] = problem[name]
+    if isinstance(raw_detail, dict):
+        details["detail"] = raw_detail
+        for name in QUERY_WINDOW_DETAIL_FIELDS:
+            value = raw_detail.get(name)
+            if isinstance(value, str) and value:
+                details[name] = value
     retry_after = headers.get("Retry-After") if headers else None
     if retry_after:
         details["retry_after"] = retry_after
@@ -238,6 +254,72 @@ def _time_bound(value: str, edge: str) -> str:
     return value
 
 
+def _window_sort_key(value: str) -> str | None:
+    text = " ".join(value.strip().replace("T", " ", 1).split())
+    if len(text) < WINDOW_INSTANT_LENGTH:
+        return None
+    key = text[:WINDOW_INSTANT_LENGTH]
+    if (
+        key[4] == "-"
+        and key[7] == "-"
+        and key[10] == " "
+        and key[13] == ":"
+        and key[16] == ":"
+        and key[:4].isdigit()
+        and key[5:7].isdigit()
+        and key[8:10].isdigit()
+        and key[11:13].isdigit()
+        and key[14:16].isdigit()
+        and key[17:19].isdigit()
+    ):
+        return key
+    return None
+
+
+def _intersect_query_window(
+    requested_from: str,
+    requested_to: str,
+    available_from: str,
+    available_to: str,
+) -> tuple[str, str] | None:
+    req_from = _window_sort_key(requested_from)
+    req_to = _window_sort_key(requested_to)
+    avail_from = _window_sort_key(available_from)
+    avail_to = _window_sort_key(available_to)
+    if req_from is None or req_to is None or avail_from is None or avail_to is None:
+        return None
+    clipped_from = max(req_from, avail_from)
+    clipped_to = min(req_to, avail_to)
+    if clipped_from > clipped_to:
+        return None
+    return clipped_from, clipped_to
+
+
+def _query_window_bounds(query: dict[str, str], error: SkillError) -> tuple[str, str, str, str] | None:
+    if error.details.get("status") != 422:
+        return None
+    available_from = error.details.get("available_from_at")
+    available_to = error.details.get("available_to_at")
+    requested_from = error.details.get("requested_from_at") or query.get("from")
+    requested_to = error.details.get("requested_to_at") or query.get("to")
+    if not all(isinstance(value, str) and value for value in (requested_from, requested_to, available_from, available_to)):
+        return None
+    return requested_from, requested_to, available_from, available_to
+
+
+def _retry_query_after_unavailable_window(query: dict[str, str], error: SkillError) -> dict[str, str] | None:
+    bounds = _query_window_bounds(query, error)
+    if bounds is None or query.get("cursor"):
+        return None
+    clipped = _intersect_query_window(*bounds)
+    if clipped is None:
+        return None
+    clipped_from, clipped_to = clipped
+    if query.get("from") == clipped_from and query.get("to") == clipped_to:
+        return None
+    return {**query, "from": clipped_from, "to": clipped_to}
+
+
 def _normalize_location_name(value: str) -> str:
     return " ".join(unicodedata.normalize("NFC", value).strip().split())
 
@@ -358,7 +440,21 @@ def _detail(config: ApiConfig, product_id: str) -> dict[str, Any]:
 
 def _data(config: ApiConfig, product_id: str, query: dict[str, str], limit: int) -> dict[str, Any]:
     _validate_product_id(product_id)
-    return _validate_data(_request_json(config, f"{PROXY_ROUTE_ROOT}/data", query), product_id, limit)
+    try:
+        payload = _request_json(config, f"{PROXY_ROUTE_ROOT}/data", query)
+    except SkillError as exc:
+        retry_query = _retry_query_after_unavailable_window(query, exc)
+        if retry_query is None:
+            bounds = _query_window_bounds(query, exc)
+            if bounds is not None and _intersect_query_window(*bounds) is None:
+                raise SkillError(
+                    "query_window_unavailable",
+                    "요청한 조회 구간이 현재 제공 가능한 예보 window와 겹치지 않습니다.",
+                    exc.details,
+                ) from exc
+            raise
+        payload = _request_json(config, f"{PROXY_ROUTE_ROOT}/data", retry_query)
+    return _validate_data(payload, product_id, limit)
 
 
 def _parser() -> argparse.ArgumentParser:

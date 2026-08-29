@@ -51,6 +51,8 @@ npx -y @nomadamas/k-skill@0 exec seoul-weather-risk scripts/seoul_weather_risk.p
 
 `--filter`가 필요하거나 게시 계약을 점검해야 할 때는 `--fast`를 빼고 full-contract query를 사용한다. fast query가 `product_not_ready` 또는 계약 오류를 반환하면 fixture나 추정값으로 대체하지 말고 아래 진단 흐름을 수행한다.
 
+`--from`/`--to`에 날짜만 넣으면 그날 `00:00:00`–`23:59:59`로 확장한다. ASK 서울 serving window가 자정부터 열려 있지 않아 `422 query_window_unavailable`이 오면 helper는 요청 구간과 `available_from_at`/`available_to_at`의 교집합으로 한 번만 재시도한다. 교집합이 없으면 그 에러의 available window를 보여주고 중단한다. 없는 시간대를 추정 데이터로 채우지 않는다.
+
 ### Contract diagnostics (only when needed)
 
 1. 환경 설정만 확인한다. 이 명령은 네트워크를 호출하지 않는다.
@@ -99,6 +101,7 @@ npx -y @nomadamas/k-skill@0 exec seoul-weather-risk scripts/seoul_weather_risk.p
 - `location_mapping_invalid`: bundled 행정동 reference의 버전·스키마·행 수 계약 오류
 - `proxy_disabled`, `invalid_proxy_base_url`: proxy 환경 설정 오류
 - `unauthorized`/`api_key_missing`(401), `forbidden`/`api_key_forbidden`(403), `unknown_product`(404)
-- `cursor_expired`(409), `rate_limited`(429), `product_not_ready`(503)
+- `cursor_expired`(409), `query_window_unavailable`(422), `rate_limited`(429), `product_not_ready`(503)
+- `query_window_unavailable`: 요청한 `--from`/`--to`가 현재 제공 가능한 예보 window와 겹치지 않음. `details.available_from_at`/`available_to_at`를 확인한다. 겹치는 구간이면 helper가 이미 한 번 재시도한 뒤의 결과다.
 - `upstream_not_configured`(503): proxy 운영 환경에 ASK Seoul 전용 서비스 키 또는 origin이 설정되지 않음
 - `response_contract_invalid`, `malformed_response`: 단일 제품 계약 또는 API 응답 계약 drift

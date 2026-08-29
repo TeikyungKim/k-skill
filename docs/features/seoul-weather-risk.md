@@ -78,6 +78,8 @@ npx -y @nomadamas/k-skill@0 exec seoul-weather-risk scripts/seoul_weather_risk.p
 
 `--fast`에서는 `--filter` 대신 `--admin-dong`, `--gu`, 날짜, `--limit`, `--cursor`를 사용합니다. `product_not_ready` 또는 계약 오류가 나오면 fixture로 대체하지 말고 게시 계약 진단을 수행합니다.
 
+`--from`과 `--to`에 날짜만 넣으면 그날 시작·끝 시각으로 확장됩니다. ASK 서울이 그 구간을 현재 serving window 밖이라고 거절하면 helper가 요청 구간과 제공 가능 window의 교집합으로 한 번 재시도합니다. 오늘 0시부터 조회해도 오후 예보 window만 열려 있으면 그 교집합만 조회하며, 없는 시간대를 임의로 채우지 않습니다.
+
 ## 게시 계약 진단
 
 아래 단계는 일반 질문마다 실행하지 않고, fast path 오류나 게시 상태 점검이 필요할 때만 실행합니다.
@@ -129,7 +131,7 @@ npx -y @nomadamas/k-skill@0 exec seoul-weather-risk scripts/seoul_weather_risk.p
 
 `--filter`가 필요하면 `--fast`를 빼고 이 full-contract 경로를 사용합니다. data 응답의 `publication_id`, `row_count`, `rows`, `has_more`, `next_cursor`를 확인하고 다음 page에는 같은 publication의 cursor만 재사용합니다.
 
-`--from`과 `--to`에 날짜만 넣으면 KST 기준으로 각각 `00:00:00`, `23:59:59`로 확장됩니다. 특정 시각이 필요하면 `2026-08-11 09:00:00`처럼 명시하세요.
+`--from`과 `--to`에 날짜만 넣으면 KST 기준으로 각각 `00:00:00`, `23:59:59`로 확장됩니다. 특정 시각이 필요하면 `2026-08-11 09:00:00`처럼 명시하세요. 확장한 하루가 현재 제공 window보다 앞이면 helper가 겹치는 구간으로 다시 조회합니다.
 
 ## 행정동 입력 규칙
 
@@ -192,6 +194,7 @@ npx -y @nomadamas/k-skill@0 exec seoul-weather-risk scripts/seoul_weather_risk.p
 | `product_not_ready` (503) | 제품이 아직 게시 준비되지 않음 | `catalog`의 `registration_ready`와 `blockers` 확인 |
 | `rate_limited` (429) | 호출 한도 초과 | 응답의 `Retry-After`를 따르고 재시도 |
 | `cursor_expired` (409) | publication이 바뀌어 cursor가 만료됨 | 첫 페이지부터 새로 조회 |
+| `query_window_unavailable` (422) | 요청 기간이 현재 제공 가능한 예보 window와 겹치지 않음 | 응답의 `available_from_at`/`available_to_at` 범위로 다시 조회. 겹치면 helper가 이미 재시도함 |
 | `response_contract_invalid` | API 응답 계약 또는 단일 제품 계약이 바뀜 | 성공 데이터로 처리하지 말고 운영자에게 신고 |
 | `network_error` | proxy 연결 실패 | 네트워크와 `KSKILL_PROXY_BASE_URL` 설정 확인 |
 
