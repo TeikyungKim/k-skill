@@ -79,6 +79,8 @@ Optional:
 - 출력 형식:
   - `--text`: 사람용 요약
   - `--json`: 구조화 결과
+- 연박 조회:
+  - `--nights 3`: 같은 객실이 3박 연속 비어 있고, 휴양림의 최대 숙박일수도 3박 이상인 건만 남긴다
 - 선택 필터:
   - `--categories 01`: 숙박
   - `--categories 02`: 야영/캠핑
@@ -141,11 +143,22 @@ npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/run_foresttrip_vacan
 npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/run_foresttrip_vacancy.py -- --forest-name 유명산 --text --dates 20260504
 ```
 
+### 3-1. Multi-night requests must use `--nights`
+
+날짜별 잔여를 눈으로 교집합해서 "3박 가능"이라고 말하면 안 된다. 같은 객실이 3일 다 비어 있어도 휴양림별 **최대 숙박일수**를 넘으면 예약 단계에서 `휴양림의 최대 숙박일수를 초과하여 신청하셨습니다`로 막힌다(2026-08-30 확인: 금원산 야영데크는 최대 2박이라 3박 신청이 거부된다).
+
+```bash
+npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/run_foresttrip_vacancy.py -- \
+  --all --json --dates 20261002,20261003,20261004 --nights 3
+```
+
+`--nights N`은 같은 `goodsId`가 N일 연속 비어 있는 건만 남기고, `mxmmStngDayCnt`가 N보다 작은 객실은 제외한다. 남은 행에는 `stay_nights`가 붙는다.
+
 ### 4. Summarize results conservatively
 
 응답은 아래 항목 중심으로 짧게 정리한다.
 
-- 조회 날짜
+- 조회 날짜 (연박이면 `nights`도)
 - 조회 범위
 - 예약 가능한 휴양림명
 - 객실/시설명
@@ -198,6 +211,10 @@ npx -y @nomadamas/k-skill@0 exec foresttrip-vacancy scripts/prepare_foresttrip_b
 - 숲나들e 표면 변경: helper의 login/session bootstrap 또는 parser 점검 필요
 - "(예비)" 객실이 결과에 안 나옴: 정상 동작이다. 사용자 예약 화면에 노출되지 않는 운영자 보유분이라 의도적으로 제외된다.
 - 사용자 화면 객실 수와 helper 결과가 다름: 같은 객실의 중복 행이 dedup되었거나, 요청 범위 밖 `useDt`가 제거됐을 가능성이 높다. raw API 응답을 확인하려면 helper 로직을 우회해서 직접 호출 필요.
+- **월별예약조회 API에는 있는데 공식 화면에는 없는 객실**: 정상 동작이다. helper는 `selectRsrvtGoodsListForMonthRsrvtSmpl.do`가 실제로 파는 상품(`rsrvtGoodsList`)만 남긴다. 공식 화면도 이 목록이 비면 아무것도 그리지 않는다(2026-08-30 확인: 가리산 야영장은 `rsrvtAvail=Y`/`rsrvtCnt=0` 행이 102건 오지만 판매 상품은 0건이라 화면에 아무것도 안 뜬다)
+- `goods:` 로 시작하는 failure: 상품 목록 조회가 실패한 것이다. 이때는 행을 지우지 않고 그대로 두므로, **공식 화면 교차 확인**을 함께 안내한다
+- `window:` 로 시작하는 failure: 예약가능기간 조회가 실패한 것이다. 같은 이유로 날짜를 지우지 않는다
+- 예약가능기간 밖 날짜가 사라짐: 정상 동작이다. 휴양림마다 `금일 ~ N까지`가 다르고(주별/월별 주기), helper는 `selectSthngListForMonthRsrvt.do`의 정책값으로 그 뒤 날짜를 제외한다
 - 브라우저 helper에서 객실명 중복: 임의 선택하지 말고 전체 객실명을 더 정확하게 지정
 - 공식 대기열 timeout: 우회하지 말고 열린 브라우저에서 기다리거나 종료
 - CAPTCHA/약관 화면: 정상 수동 인계이며 helper가 입력하거나 체크하지 않음

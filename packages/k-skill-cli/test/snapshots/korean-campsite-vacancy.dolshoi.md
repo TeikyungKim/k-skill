@@ -161,6 +161,7 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
 - 시즌 구분(성수기/준성수기/비수기)이 있으면 요금 판단에 영향을 주므로 함께 전달
 - 요금이 함께 오면(`thankq`) 같이 전달한다. 주말·주중 요금이 다르다
 - **`booking_status`가 `open`이 아니면 그 사실을 먼저 말한다.** 특히 `not_open`은 예약창이 안 열린 날이라 숫자가 잔여가 아니라 **총 정원**이다. 이걸 빈자리처럼 전달하지 않는다
+- `not_open`은 `donghae`(이용일 30일 전 오픈), `thankq`(예약 페이지의 `res_able_max_dt` 이후), `dzsmart`(해당 월 달력 미공개) 세 경로에서 나온다. 셋 다 **마감이 아니라 "아직 열리지 않음"**이므로 언제 열리는지와 함께 전달한다
 - `fetch_failures`가 0이 아니면 실패한 provider와 실패 범위(`scope`)를 함께 보고
 
 빈자리가 없으면 **"조회 시점 기준 예약 가능 사이트 없음"** 이라고 명확히 말한다. 잔여 면수는 실시간으로 바뀌므로 실제 예약 화면에서 재확인될 수 있음을 덧붙인다.
@@ -188,6 +189,8 @@ https://camping.gtdc.or.kr/pub/reserv.do
 
 - Playwright 미설치: `python3 -m pip install playwright && python3 -m playwright install chromium` (`dzsmart` provider에만 해당)
 - `thankq` 500 응답: 날짜 형식이 `YYYYMMDD`가 아니거나 `camp_seq`가 잘못됐다
+- `thankq` 예약창 밖 날짜: 사이트 목록 endpoint는 **예약창이 열리지 않은 날짜에도 총 정원을 그대로 응답한다.** 어댑터가 예약 페이지(`/resv/view.hbb?cseq=`)의 `res_able_max_dt`·datepicker 범위를 읽어 `booking_status: not_open`으로 표시한다. 이 숫자를 잔여로 읽지 않는다
+- `thankq` booking-window 조회 실패: `scope: booking-window` 실패로 보고된다. 이때 날짜 상태는 `open`으로 남으므로 **공식 화면에서 예약 가능 기간을 직접 확인**하라고 안내한다
 - `maketicket` 날짜 없음: 예약 미오픈이거나 운영하지 않는 날짜다. 실패로 보고되며 "빈자리 없음"이 아니다
 - `gmuc` 범위 밖 날짜: 공개 예약현황이 **당월+익월 2개월만** 노출한다. 그 밖의 날짜는 실패로 보고되며 "빈자리 없음"이 아니다
 - `donghae` credential 누락: `KSKILL_DONGHAE_ID` / `KSKILL_DONGHAE_PASSWORD` 확인. 값이 `replace-me`면 미설정으로 처리된다
@@ -196,6 +199,7 @@ https://camping.gtdc.or.kr/pub/reserv.do
 - 미래 날짜인데 모든 시설이 만석으로 나옴: `booking_status: not_open`인지 확인한다. 동해시는 이용일 **30일 전 오전 11시**에 예약창을 연다. 그 전에는 총 정원이 그대로 조회된다
 - `booking_status: unknown`: 달력 라벨이 바뀐 것이다. 예약 가능으로 단정하지 말고 사용자에게 공식 화면 확인을 안내한다
 - `wait_for_selector` timeout: 예약 시스템 점검 중이거나 해당 월이 아직 오픈 전이다. 월을 바꿔 재확인하고, 그래도 비면 "해당 월 예약 미오픈"으로 보고한다
+- `dzsmart` 요청 월이 달력에 없음: 그 달 예약이 아직 안 열린 것이다. 결과에서 조용히 빠지지 않고 `booking_status: not_open` + `2026-10 예약 달력이 아직 열리지 않았다` 같은 `status_note`로 나온다. **마감이 아니다**
 - 결과가 전부 마감: 정상 동작이다. 성수기 주말은 대부분 마감이다
 - 존 이름이 바뀜: dzSmart 존 구성은 운영기관이 시즌마다 바꾼다. `--include-full`로 원본 존 목록을 먼저 확인한다
 - 파서가 0건 반환: 사이트가 렌더링 구조를 바꿨을 가능성이 높다. `tests/fixtures/`의 캡처와 실제 응답을 비교해 `parse_month_html`(dzsmart) 또는 `parse_thankq_html`(thankq)을 점검한다

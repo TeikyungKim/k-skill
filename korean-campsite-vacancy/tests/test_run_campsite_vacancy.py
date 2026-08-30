@@ -32,6 +32,7 @@ YEONGOK_HTML = (FIXTURES_DIR / "gtdc_yeongok_202608.html").read_text(encoding="u
 JARASEOM_HTML = (FIXTURES_DIR / "thankq_jaraseom_20260905.html").read_text(encoding="utf-8")
 GMUC_HTML = (FIXTURES_DIR / "gmuc_dodeoksan.html").read_text(encoding="utf-8")
 MAKETICKET_HTML = (FIXTURES_DIR / "maketicket_jangho_202609.html").read_text(encoding="utf-8")
+JARASEOM_VIEW_HTML = (FIXTURES_DIR / "thankq_jaraseom_view.html").read_text(encoding="utf-8")
 
 
 def maketicket_fetcher(_entrypoint, _gd_seq, _month):
@@ -50,8 +51,13 @@ def thankq_fetcher(_entrypoint, _camp_seq, _use_dt):
     return JARASEOM_HTML
 
 
+def thankq_view_fetcher(_entrypoint, _camp_seq):
+    return JARASEOM_VIEW_HTML
+
+
 DZSMART_FETCHERS = {"dzsmart": fixture_fetcher}
-ALL_FETCHERS = {"dzsmart": fixture_fetcher, "thankq": thankq_fetcher}
+THANKQ_FETCHERS = {"thankq": thankq_fetcher, "thankq_view": thankq_view_fetcher}
+ALL_FETCHERS = {"dzsmart": fixture_fetcher, **THANKQ_FETCHERS}
 
 
 class ParseMonthHtmlTest(unittest.TestCase):
@@ -186,10 +192,26 @@ class CollectResultsTest(unittest.TestCase):
     def test_provider_with_no_vacancy_is_omitted_not_faked(self):
         payload = helper.collect_results(
             provider_ids=("gtdc-yeongok",),
-            dates=("20260901",),
+            dates=("20260829",),
+            zone_filter="없는존이름",
             fetchers=DZSMART_FETCHERS,
         )
         self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["filter_hits"], 0)
+
+    def test_date_missing_from_the_calendar_is_reported_not_dropped(self):
+        # 20260901 is outside the fixture's 2026-08 calendar. Dropping it would
+        # read as "no vacancy" when the truth is "that month is not open yet".
+        payload = helper.collect_results(
+            provider_ids=("gtdc-yeongok",),
+            dates=("20260901",),
+            fetchers=DZSMART_FETCHERS,
+        )
+        day = payload["results"][0]["dates"][0]
+        self.assertEqual(day["use_dt"], "20260901")
+        self.assertEqual(day["booking_status"], "not_open")
+        self.assertIn("예약 달력", day["status_note"])
+        self.assertEqual(day["zones"], [])
         self.assertEqual(payload["filter_hits"], 0)
 
     def test_fetch_failure_is_reported_not_swallowed(self):
@@ -289,7 +311,7 @@ class ThankqCollectTest(unittest.TestCase):
         payload = helper.collect_results(
             provider_ids=("thankq-jaraseom",),
             dates=("20260905",),
-            fetchers={"thankq": boom},
+            fetchers={"thankq": boom, "thankq_view": thankq_view_fetcher},
         )
         self.assertEqual(payload["fetch_failures"], 1)
         self.assertEqual(payload["failures"][0]["scope"], "20260905")
@@ -339,6 +361,53 @@ def donghae_fetcher(_entrypoint, _code, dates, *, user, password):
 def donghae_not_open_fetcher(_entrypoint, _code, dates, *, user, password):
     assert user and password
     return {use_dt: {"value": DONGHAE_VALUE, "status": "not_open"} for use_dt in dates}
+
+
+class ThankqBookingWindowTest(unittest.TestCase):
+    def test_window_is_read_off_the_reservation_page(self):
+        first, last = helper.parse_thankq_window(JARASEOM_VIEW_HTML)
+        self.assertEqual(first, "20260831")
+        self.assertEqual(last, "20261001")
+
+    def test_missing_markers_yield_no_window(self):
+        self.assertEqual(helper.parse_thankq_window("<html></html>"), (None, None))
+
+    def test_date_past_the_window_is_not_open_not_vacancy(self):
+        # The site-list fragment answers with full capacity for 20261002, which is
+        # past res_able_max_dt. Counting it as vacancy is the bug this guards.
+        payload = helper.collect_results(
+            provider_ids=("thankq-jaraseom",),
+            dates=("20261002",),
+            fetchers=THANKQ_FETCHERS,
+        )
+        day = payload["results"][0]["dates"][0]
+        self.assertEqual(day["booking_status"], "not_open")
+        self.assertIn("2026-10-01", day["status_note"])
+        self.assertTrue(all(zone["available"] is False for zone in day["zones"]))
+        self.assertEqual(payload["filter_hits"], 0)
+
+    def test_date_inside_the_window_stays_open(self):
+        payload = helper.collect_results(
+            provider_ids=("thankq-jaraseom",),
+            dates=("20260905",),
+            fetchers=THANKQ_FETCHERS,
+        )
+        day = payload["results"][0]["dates"][0]
+        self.assertEqual(day["booking_status"], "open")
+        self.assertIsNone(day["status_note"])
+        self.assertGreater(payload["filter_hits"], 0)
+
+    def test_window_fetch_failure_is_reported(self):
+        def boom(_entrypoint, _camp_seq):
+            raise RuntimeError("view.hbb 503")
+
+        payload = helper.collect_results(
+            provider_ids=("thankq-jaraseom",),
+            dates=("20260905",),
+            fetchers={"thankq": thankq_fetcher, "thankq_view": boom},
+        )
+        self.assertEqual(payload["fetch_failures"], 1)
+        self.assertEqual(payload["failures"][0]["scope"], "booking-window")
 
 
 class ParseDonghaeValueTest(unittest.TestCase):
@@ -689,7 +758,8 @@ class OutputTest(unittest.TestCase):
     def test_empty_result_says_so_explicitly(self):
         empty = helper.collect_results(
             provider_ids=("gtdc-yeongok",),
-            dates=("20260901",),
+            dates=("20260829",),
+            zone_filter="없는존이름",
             fetchers=DZSMART_FETCHERS,
         )
         buffer = io.StringIO()

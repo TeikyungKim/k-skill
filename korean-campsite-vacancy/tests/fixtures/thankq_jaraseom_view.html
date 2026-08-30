@@ -1,0 +1,22 @@
+<!-- Trimmed 자라섬캠핑장 reservation page (m.thankqcamping.com/resv/view.hbb?cseq=1).
+     Only the markers that carry the booking window are kept. -->
+<html>
+<body>
+<form name="form" id="frm">
+  <input type="hidden" id="cseq" name="cseq" value="1">
+  <input type="hidden" name="res_dt" value="20260831">
+  <input type="hidden" name="res_max_dt" value="3">
+  <input type="hidden" name="res_able_dt" value="20261031">
+  <input type="hidden" name="res_able_max_dt" value="20261001">
+  <input type="hidden" name="res_next_able_dt" value="20261001">
+  <input type="hidden" name="lastday_1bak_yn" value="Y">
+</form>
+<script>
+  $( document ).ready( function() {
+    ServerTimeInit();
+    setDatePicker(document.form, '20260831', '20261001')
+    $("#DivCalendar").datepicker({maxDate: '20261001'});
+  });
+</script>
+</body>
+</html>

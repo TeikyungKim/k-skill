@@ -59,18 +59,57 @@ def stub_fetch(rows):
     return _stub
 
 
-def run_collect(session, targets, rows, *, dates=None, week_range=None, categories=("01",)):
+def stub_goods(rows):
+    """Offer every goods id the fixture rows carry, so the gate stays inert."""
+
+    def _stub(*, forest_id, category, **_):
+        offered = {
+            str(r.get("goodsId") or "")
+            for r in rows
+            if r.get("insttId") == forest_id
+        }
+        return forest_id, category, offered, None
+
+    return _stub
+
+
+def stub_window(last_day=None):
+    def _stub(*, forest_id, **_):
+        return forest_id, last_day, None
+
+    return _stub
+
+
+def run_collect(
+    session,
+    targets,
+    rows,
+    *,
+    dates=None,
+    week_range=None,
+    categories=("01",),
+    nights=1,
+    goods_stub=None,
+    window_stub=None,
+):
     with mock.patch.object(helper, "fetch_one", side_effect=stub_fetch(rows)):
-        with mock.patch.object(helper, "datetime", wraps=datetime) as mock_dt:
-            mock_dt.now.return_value = FIXED_NOW
-            return helper.collect_results(
-                session=session,
-                targets=targets,
-                categories=categories,
-                dates=tuple(dates) if dates else None,
-                week_range=week_range,
-                concurrency=1,
-            )
+        with mock.patch.object(
+            helper, "fetch_offered_goods", side_effect=goods_stub or stub_goods(rows)
+        ):
+            with mock.patch.object(
+                helper, "fetch_booking_window", side_effect=window_stub or stub_window()
+            ):
+                with mock.patch.object(helper, "datetime", wraps=datetime) as mock_dt:
+                    mock_dt.now.return_value = FIXED_NOW
+                    return helper.collect_results(
+                        session=session,
+                        targets=targets,
+                        categories=categories,
+                        dates=tuple(dates) if dates else None,
+                        week_range=week_range,
+                        concurrency=1,
+                        nights=nights,
+                    )
 
 
 class IsReserveRoomTest(unittest.TestCase):
@@ -202,17 +241,24 @@ class CollectResultsFilterTest(unittest.TestCase):
         def fetch_category(*, forest_id, category, **_):
             return forest_id, category, rows_by_category[category], None
 
+        all_rows = [row for rows in rows_by_category.values() for row in rows]
         with mock.patch.object(helper, "fetch_one", side_effect=fetch_category):
-            with mock.patch.object(helper, "datetime", wraps=datetime) as mock_dt:
-                mock_dt.now.return_value = FIXED_NOW
-                payload = helper.collect_results(
-                    session=self.session,
-                    targets=self.targets,
-                    categories=("01", "02"),
-                    dates=("20260513",),
-                    week_range=None,
-                    concurrency=1,
-                )
+            with mock.patch.object(
+                helper, "fetch_offered_goods", side_effect=stub_goods(all_rows)
+            ):
+                with mock.patch.object(
+                    helper, "fetch_booking_window", side_effect=stub_window()
+                ):
+                    with mock.patch.object(helper, "datetime", wraps=datetime) as mock_dt:
+                        mock_dt.now.return_value = FIXED_NOW
+                        payload = helper.collect_results(
+                            session=self.session,
+                            targets=self.targets,
+                            categories=("01", "02"),
+                            dates=("20260513",),
+                            week_range=None,
+                            concurrency=1,
+                        )
 
         self.assertEqual(payload["filter_hits"], 2)
         observed = [
@@ -278,6 +324,123 @@ class PrintTextTest(unittest.TestCase):
         with redirect_stdout(buffer):
             helper.print_text(payload)
         self.assertIn("(no available rooms at lookup time)", buffer.getvalue())
+
+
+class OfficialGateTest(unittest.TestCase):
+    """The availability feed is not the same thing as what the site offers."""
+
+    def setUp(self):
+        self.session = make_session({GEOJE_FOREST_ID: GEOJE_FOREST_NAME})
+        self.targets = {GEOJE_FOREST_ID: GEOJE_FOREST_NAME}
+
+    def collect(self, **kwargs):
+        return run_collect(self.session, self.targets, GEOJE_ROWS, dates=["20260513"], **kwargs)
+
+    def test_goods_the_site_does_not_offer_are_dropped(self):
+        # 가리산's 야영데크 shows up in the feed with rsrvtAvail=Y / rsrvtCnt=0 while
+        # the official screen offers no camping goods at all and renders nothing.
+        def only_one(*, forest_id, category, **_):
+            return forest_id, category, {"GID-A1"}, None
+
+        payload = self.collect(goods_stub=only_one)
+        names = [
+            room["name"]
+            for forest in payload["results"]
+            for day in forest["dates"]
+            for room in day["rooms"]
+        ]
+        self.assertEqual(names, ["동백1"])
+
+    def test_a_forest_offering_nothing_yields_nothing(self):
+        def offers_nothing(*, forest_id, category, **_):
+            return forest_id, category, set(), None
+
+        payload = self.collect(goods_stub=offers_nothing)
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["filter_hits"], 0)
+
+    def test_goods_gate_failure_reports_and_keeps_rows(self):
+        def boom(*, forest_id, category, **_):
+            return forest_id, category, None, "http_403"
+
+        payload = self.collect(goods_stub=boom)
+        self.assertTrue(payload["results"])
+        self.assertEqual(payload["fetch_failures"], 1)
+        self.assertIn("goods:http_403", payload["failures"][0]["error"])
+
+    def test_dates_past_the_booking_window_are_dropped(self):
+        payload = run_collect(
+            self.session,
+            self.targets,
+            GEOJE_ROWS,
+            dates=["20260513", "20260514"],
+            window_stub=stub_window("20260513"),
+        )
+        seen = [day["use_dt"] for forest in payload["results"] for day in forest["dates"]]
+        self.assertEqual(seen, ["20260513"])
+
+    def test_window_gate_failure_is_reported(self):
+        def boom(*, forest_id, **_):
+            return forest_id, None, "http_403"
+
+        payload = self.collect(window_stub=boom)
+        self.assertEqual(payload["fetch_failures"], 1)
+        self.assertIn("window:http_403", payload["failures"][0]["error"])
+
+
+class ReservationLastDayTest(unittest.TestCase):
+    def test_week_cycle_uses_week_last_day(self):
+        policy = {"rsrvtPolcy": {"rsrvtCycleTpeCd": "WEEK", "weekLastDay": "20261006", "monthLastDay": "20260930"}}
+        self.assertEqual(helper.reservation_last_day(policy), "20261006")
+
+    def test_month_cycle_uses_month_last_day(self):
+        policy = {"rsrvtPolcy": {"rsrvtCycleTpeCd": "MON", "weekLastDay": "20261006", "monthLastDay": "20260930"}}
+        self.assertEqual(helper.reservation_last_day(policy), "20260930")
+
+    def test_general_transfer_date_extends_the_window(self):
+        policy = {
+            "rsrvtPolcy": {"rsrvtCycleTpeCd": "MON", "monthLastDay": "20260930"},
+            "gnrlRsrvtTrnseDtm": "20261010",
+        }
+        self.assertEqual(helper.reservation_last_day(policy), "20261010")
+
+    def test_missing_policy_means_no_window(self):
+        self.assertIsNone(helper.reservation_last_day({}))
+
+
+class ConsecutiveStayTest(unittest.TestCase):
+    """Per-night vacancy is not a multi-night booking."""
+
+    def rows(self, **overrides):
+        base = {"forest_id": "F1", "source_category": "02", "goods_id": "G1", "name": "데크1", "max_stay_nights": "3"}
+        return [{**base, "use_dt": use_dt, **overrides} for use_dt in ("20261002", "20261003", "20261004")]
+
+    def test_three_free_nights_survive(self):
+        kept = helper.filter_consecutive_stays(self.rows(), 3)
+        self.assertEqual([row["use_dt"] for row in kept], ["20261002"])
+        self.assertEqual(kept[0]["stay_nights"], 3)
+
+    def test_a_gap_in_the_middle_breaks_the_run(self):
+        rows = [row for row in self.rows() if row["use_dt"] != "20261003"]
+        self.assertEqual(helper.filter_consecutive_stays(rows, 3), [])
+
+    def test_max_stay_nights_caps_the_request(self):
+        # 금원산 answers "휴양림의 최대 숙박일수를 초과하여 신청하셨습니다" for 3 nights
+        # even though all three nights look free one at a time.
+        rows = self.rows(max_stay_nights="2")
+        self.assertEqual(helper.filter_consecutive_stays(rows, 3), [])
+        self.assertEqual(len(helper.filter_consecutive_stays(rows, 2)), 2)
+
+    def test_a_different_room_each_night_does_not_count(self):
+        rows = [
+            {"forest_id": "F1", "source_category": "02", "goods_id": f"G{i}", "name": f"데크{i}", "max_stay_nights": "3", "use_dt": use_dt}
+            for i, use_dt in enumerate(("20261002", "20261003", "20261004"))
+        ]
+        self.assertEqual(helper.filter_consecutive_stays(rows, 3), [])
+
+    def test_single_night_is_a_passthrough(self):
+        rows = self.rows()
+        self.assertEqual(helper.filter_consecutive_stays(rows, 1), rows)
 
 
 class MainOutputTest(unittest.TestCase):

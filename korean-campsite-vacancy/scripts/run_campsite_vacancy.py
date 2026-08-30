@@ -273,6 +273,15 @@ THANKQ_BADGE_RE = re.compile(
     re.IGNORECASE,
 )
 THANKQ_PRICE_RE = re.compile(r'<p class="pri">(?P<price>.*?)</p>', re.IGNORECASE | re.DOTALL)
+THANKQ_VIEW_PATH = "/resv/view.hbb"
+# The site-list fragment answers for ANY date, including ones far past the
+# booking window, and it answers with the site's FULL CAPACITY. The window
+# itself lives only on the reservation page: a hidden res_able_max_dt input and
+# the datepicker bounds. Without it every unopened date reads as wide open.
+THANKQ_ABLE_MAX_RE = re.compile(r'name="res_able_max_dt"\s+value="(?P<dt>\d{8})"')
+THANKQ_DATEPICKER_RE = re.compile(
+    r"setDatePicker\(\s*document\.form\s*,\s*'(?P<min>\d{8})'\s*,\s*'(?P<max>\d{8})'\s*\)"
+)
 
 
 def parse_thankq_html(html: str) -> list[dict[str, Any]]:
@@ -306,6 +315,42 @@ def parse_thankq_html(html: str) -> list[dict[str, Any]]:
         )
 
     return zones
+
+
+def parse_thankq_window(html: str) -> tuple[str | None, str | None]:
+    """Read the bookable date window (first, last) off the reservation page.
+
+    Returns ``(None, None)`` when the page stops exposing either marker, and the
+    caller then treats every date as unknown rather than silently open.
+    """
+    first: str | None = None
+    last: str | None = None
+
+    picker = THANKQ_DATEPICKER_RE.search(html)
+    if picker:
+        first = picker.group("min")
+        last = picker.group("max")
+
+    able_max = THANKQ_ABLE_MAX_RE.search(html)
+    if able_max:
+        last = able_max.group("dt")
+
+    return first, last
+
+
+def fetch_thankq_view(
+    entrypoint: str,
+    camp_seq: str,
+    *,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
+) -> str:
+    """Load the official reservation page that carries the booking window."""
+    request = urllib.request.Request(
+        f"{entrypoint.rstrip('/')}{THANKQ_VIEW_PATH}?cseq={camp_seq}",
+        headers={"User-Agent": USER_AGENT},
+    )
+    with urllib.request.urlopen(request, timeout=timeout_ms / 1000) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 
 def fetch_thankq_day(
@@ -861,12 +906,18 @@ def collect_dzsmart(
     dates: tuple[str, ...],
     fetch: Callable[[str, str], str],
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
-    """One page load per month, then keep only the requested days."""
+    """One page load per month, then keep only the requested days.
+
+    dzSmart publishes a month at a time. A month that has not been opened yet
+    renders an empty calendar, so a requested date that never shows up is
+    reported as ``not_open`` — dropping it silently would read as "no vacancy".
+    """
     wanted = set(dates)
     days: dict[str, dict[str, Any]] = {}
     failures: list[dict[str, str]] = []
 
     for month in months_for(dates):
+        month_dates = sorted(use_dt for use_dt in wanted if use_dt.startswith(month))
         try:
             html = fetch(provider.entrypoint, month)
         except SystemExit:
@@ -875,7 +926,8 @@ def collect_dzsmart(
             failures.append({"provider": provider.id, "scope": month, "error": describe(exc)})
             continue
 
-        for day in parse_month_html(html):
+        parsed = parse_month_html(html)
+        for day in parsed:
             if day["use_dt"] in wanted:
                 days[day["use_dt"]] = {
                     "use_dt": day["use_dt"],
@@ -884,6 +936,25 @@ def collect_dzsmart(
                     "zones": day["zones"],
                 }
 
+        # An unopened month either renders nothing or falls back to the current
+        # month, so "no day of the requested month came back" is the real signal.
+        month_is_published = any(day["use_dt"].startswith(month) for day in parsed)
+        note = (
+            "해당 날짜가 예약 달력에 없다 (운영하지 않는 날짜)"
+            if month_is_published
+            else f"{month[:4]}-{month[4:]} 예약 달력이 아직 열리지 않았다"
+        )
+        for use_dt in month_dates:
+            if use_dt in days:
+                continue
+            days[use_dt] = {
+                "use_dt": use_dt,
+                "season": None,
+                "booking_status": "not_open",
+                "status_note": note,
+                "zones": [],
+            }
+
     return days, failures
 
 
@@ -891,11 +962,29 @@ def collect_thankq(
     provider: Provider,
     dates: tuple[str, ...],
     fetch: Callable[[str, str, str], str],
+    fetch_view: Callable[[str, str], str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, str]]]:
-    """One form POST per requested date; the platform has no month view."""
+    """One form POST per requested date; the platform has no month view.
+
+    The site-list fragment reports full capacity for dates the booking window has
+    not reached yet, so the window is read once off the reservation page and every
+    date outside it is marked ``not_open`` instead of being counted as vacancy.
+    """
     days: dict[str, dict[str, Any]] = {}
     failures: list[dict[str, str]] = []
     camp_seq = provider.camp_seq or ""
+
+    first_dt: str | None = None
+    last_dt: str | None = None
+    if fetch_view is not None:
+        try:
+            first_dt, last_dt = parse_thankq_window(fetch_view(provider.entrypoint, camp_seq))
+        except SystemExit:
+            raise
+        except Exception as exc:  # noqa: BLE001 - reported, never swallowed
+            failures.append(
+                {"provider": provider.id, "scope": "booking-window", "error": describe(exc)}
+            )
 
     for use_dt in dates:
         try:
@@ -907,8 +996,28 @@ def collect_thankq(
             continue
 
         zones = parse_thankq_html(html)
-        if zones:
-            days[use_dt] = {"use_dt": use_dt, "season": None, "zones": zones}
+        if not zones:
+            continue
+
+        status = "open"
+        note: str | None = None
+        if last_dt and use_dt > last_dt:
+            status = "not_open"
+            note = (
+                f"예약창이 {last_dt[:4]}-{last_dt[4:6]}-{last_dt[6:]}까지만 열려 있다. "
+                "아래 숫자는 잔여가 아니라 총 정원이다"
+            )
+        elif first_dt and use_dt < first_dt:
+            status = "closed"
+            note = f"{first_dt[:4]}-{first_dt[4:6]}-{first_dt[6:]} 이전 날짜라 예약할 수 없다"
+
+        days[use_dt] = {
+            "use_dt": use_dt,
+            "season": None,
+            "booking_status": status,
+            "status_note": note,
+            "zones": zones,
+        }
 
     return days, failures
 
@@ -1016,6 +1125,7 @@ def collect_results(
     active = {
         "dzsmart": fetch_month_html,
         "thankq": fetch_thankq_day,
+        "thankq_view": fetch_thankq_view,
         "donghae": fetch_donghae_days,
         "gmuc": fetch_gmuc_page,
         "maketicket": fetch_maketicket_month,
@@ -1040,7 +1150,9 @@ def collect_results(
             continue
 
         if provider.transport == "thankq":
-            day_rows, provider_failures = collect_thankq(provider, dates, fetch)
+            day_rows, provider_failures = collect_thankq(
+                provider, dates, fetch, active.get("thankq_view")
+            )
         elif provider.transport == "donghae":
             day_rows, provider_failures = collect_donghae(provider, dates, fetch)
         elif provider.transport == "gmuc":
@@ -1066,14 +1178,14 @@ def collect_results(
                 zones = [{**zone, "available": False} for zone in zones]
             elif not include_full:
                 zones = [zone for zone in zones if zone["available"]]
-            if not zones:
+            if not zones and bookable_day:
                 continue
             hits += sum(1 for zone in zones if zone["available"])
             kept[use_dt] = {
                 "use_dt": use_dt,
                 "season": day["season"],
                 "booking_status": status,
-                "status_note": STATUS_NOTE.get(status),
+                "status_note": day.get("status_note") or STATUS_NOTE.get(status),
                 "zones": zones,
             }
 

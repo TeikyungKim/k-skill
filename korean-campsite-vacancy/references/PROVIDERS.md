@@ -74,6 +74,13 @@
 
 `sets`에 `captcha: true`, `smsauth: true`가 들어 있다. **예약 경로에는 캡차와 SMS 본인인증이 있다.** 조회 전용 경계를 유지하는 근거다.
 
+### 월이 아직 열리지 않은 경우
+
+dzSmart는 `tmonth=YYYYMM` 단위로 달력을 공개한다. 아직 열지 않은 달을 요청하면 **오류 없이 그 달의 행이 통째로 없는 응답**이 온다(현재 달로 되돌아오기도 한다). 예전 어댑터는 이걸 조용히 버려서 "빈자리 없음"과 구분되지 않았다.
+
+2026-08-30 확인: 연곡·바다내음·오죽 모두 `202609`까지만 나오고 `202610`은 비어 있었다. 지금은 요청한 날짜가 달력에 없으면 `booking_status: not_open` + `status_note`("2026-10 예약 달력이 아직 열리지 않았다")로 남긴다.
+
+
 ### 등록된 사이트
 
 | provider id | 호스트 | 확인 |
@@ -130,6 +137,33 @@ campseq=1&res_dt=20260905&res_edt=20260905&res_days=1&site_tp=&only_able_yn=
   - 클래스 없음 → `예약완료`
   - `red` → `예약불가`
 - `p.na` = 존 이름, `p.pri` = 요금 (주말·주중이 다르다)
+
+### 예약창 오픈 여부 (중요)
+
+**`axResCampSite.hbb`는 예약창이 열렸는지 전혀 알려주지 않는다.** 2027년 날짜를 넣어도 `예약가능 68` 처럼 총 정원을 그대로 돌려준다. 이걸 잔여로 읽으면 아직 열리지도 않은 날짜가 "전 사이트 여유"로 보고된다.
+
+윈도우는 예약 페이지에만 있다.
+
+```
+GET https://m.thankqcamping.com/resv/view.hbb?cseq=1
+```
+
+```html
+<input type="hidden" name="res_able_max_dt" value="20261001">
+<input type="hidden" name="res_max_dt" value="3">        <!-- 최대 3박 -->
+```
+
+```js
+setDatePicker(document.form, '20260831', '20261001')
+$("#DivCalendar").datepicker({maxDate: '20261001'});
+```
+
+2026-08-30 확인: 자라섬은 `20260831` ~ `20261001` 만 선택 가능했다. 어댑터는 provider당 이 페이지를 1회 읽어 범위를 잡고,
+
+- `use_dt > res_able_max_dt` → `booking_status: not_open` (숫자는 잔여가 아니라 총 정원)
+- `use_dt < 시작일` → `booking_status: closed`
+
+로 표시한 뒤 모든 zone의 `available`을 `False`로 만든다. 두 마커가 모두 사라지면 범위를 모르는 것으로 두고 날짜를 건드리지 않되, `scope: booking-window` 실패를 남긴다.
 
 ### 주의: 주석 처리된 중복 블록
 
