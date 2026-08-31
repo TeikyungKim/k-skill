@@ -36,7 +36,7 @@
     "lat": 37.4437204444368,
     "lng": 127.13743173243
    },
-   "manage_cost": null,
+   "manage_cost": "70000",
    "reg_date": "2026-08-20T13:37:33+09:00",
    "is_new": false,
    "addressOrigin": {

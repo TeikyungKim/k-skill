@@ -97,6 +97,11 @@ npx -y @nomadamas/k-skill@0 exec realty-listing-search scripts/run_realty_listin
 
 가격 단위는 **만원** (`deposit`, `rent`). `전용면적.m2`를 면적 기준으로 쓴다.
 
+> 예외: 목록 API의 `manage_cost`만 **원 단위 문자열**(`"180000"`)이다. helper가
+> 만원으로 환산해 `manage_cost_manwon`에 담으므로 응답의 모든 `*_manwon`은
+> 단위가 같다. 상세 API는 `manageCost.amount`(만원)와 `manageCost.fee`(원)를
+> 둘 다 준다.
+
 > 구버전 경로 `/v2/items/oneroom`, `/v2/items?geohash=` 는 모두 404다. 쓰지 않는다.
 
 ### dabang
@@ -206,7 +211,9 @@ https://new.land.naver.com/complexes?ms=<lat>,<lng>,<zoom>&a=APT:PRE:ABYG:JGC&e=
 
 ## Notes
 
-- 가격 단위는 전 provider 공통 **만원** (`deposit_manwon`, `rent_manwon`).
+- 가격 단위는 전 provider 공통 **만원** (`deposit_manwon`, `rent_manwon`,
+  `manage_cost_manwon`). 직방 목록 API의 `manage_cost`만 원 단위라 helper가
+  환산한다 — 원본 값을 그대로 쓰면 관리비가 1만 배로 부풀려진다.
 - `lat`/`lng`는 두 포털 모두 **의도적으로 흔든 좌표**(약 100m)다. 역 거리 랭킹에는 쓸 수 있지만 정확한 주소로 쓰면 안 된다.
 - 평 = m² / 3.305785.
 - 직방 geohash 5자리는 약 5km × 5km라 인접 동 매물이 함께 잡힌다. 결과의

@@ -126,6 +126,15 @@ class NormaliseZigbangTest(unittest.TestCase):
         self.assertEqual(item["price_manwon"], 48000)
         self.assertIsNone(item["deposit_manwon"])
 
+    def test_manage_cost_converts_won_to_manwon(self):
+        # The list API reports 관리비 in 원 as a string, unlike deposit/rent.
+        item = mod.normalise_zigbang(self.raw)
+        self.assertEqual(item["manage_cost_manwon"], 7.0)
+
+    def test_manage_cost_missing_stays_none(self):
+        raw = dict(self.raw, manage_cost=None)
+        self.assertIsNone(mod.normalise_zigbang(raw)["manage_cost_manwon"])
+
 
 class NormaliseDabangTest(unittest.TestCase):
     def setUp(self):

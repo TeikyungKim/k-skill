@@ -154,6 +154,14 @@ def _num(value: Any) -> float | None:
         return None
 
 
+def _won_to_manwon(value: Any) -> float | None:
+    """Convert a 원 amount to 만원, trimmed to one decimal (5,000원 -> 0.5)."""
+    won = _num(value)
+    if won is None:
+        return None
+    return round(won / 10000, 1)
+
+
 # ---------------------------------------------------------------------------
 # geohash (stdlib only -- no external dependency)
 # ---------------------------------------------------------------------------
@@ -457,7 +465,9 @@ def normalise_zigbang(raw: dict[str, Any]) -> dict[str, Any]:
         lat=_num((raw.get("location") or {}).get("lat")),
         lng=_num((raw.get("location") or {}).get("lng")),
         extra={
-            "manage_cost_manwon": _num(raw.get("manage_cost")),
+            # The list API reports 관리비 in 원 ("180000"), unlike deposit/rent
+            # which are already 만원. Convert so every *_manwon field shares a unit.
+            "manage_cost_manwon": _won_to_manwon(raw.get("manage_cost")),
             "registered_at": raw.get("reg_date"),
         },
     )
