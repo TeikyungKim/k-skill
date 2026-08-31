@@ -23,6 +23,9 @@ const CDP_URL = process.env.KSKILL_CHROME_CDP_URL || "http://127.0.0.1:9222";
 const ORIGIN = "https://new.land.naver.com";
 const SETTLE_MS = 14000;
 const PAGE_LIMIT_DEFAULT = 3;
+// The article API is the SPA's own detail call; space them out so a
+// move-in sweep looks like reading, not like a crawler.
+const MOVE_IN_THROTTLE_MS = 700;
 
 const TRADE_CODE = { 매매: "A1", 전세: "B1", 월세: "B2" };
 const TYPE_CODE = {
@@ -39,8 +42,25 @@ function fail(reason, extra) {
 
 function parseArgs(argv) {
   const out = {};
-  for (let i = 0; i < argv.length; i += 2) out[argv[i].replace(/^--/, "")] = argv[i + 1];
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (!token.startsWith("--")) continue;
+    const key = token.replace(/^--/, "");
+    const next = argv[i + 1];
+    // A flag with no value ("--with-move-in") must not swallow the next flag.
+    if (next === undefined || next.startsWith("--")) {
+      out[key] = true;
+    } else {
+      out[key] = next;
+      i += 1;
+    }
+  }
   return out;
+}
+
+/** CLI flags arrive as "1"/"true"/true depending on the caller. */
+function truthy(value) {
+  return value === true || value === "1" || value === "true";
 }
 
 /** "2억 1,500" / "3억" / "9,500" -> 만원 단위 숫자 */
@@ -84,6 +104,35 @@ function normalise(a, region) {
   };
 }
 
+/**
+ * Pull 입주가능일 out of an article detail payload.
+ *
+ * `moveInTypeName` is a display label and it lies: listings whose
+ * `moveInPossibleYmd` is 20261030 still render as "즉시입주". Callers must
+ * filter on the date, so both are surfaced and the label is never parsed
+ * into one.
+ */
+function parseMoveIn(detail) {
+  const ad = (detail && detail.articleDetail) || {};
+  const ymd = ad.moveInPossibleYmd;
+  return {
+    move_in_ymd: ymd === undefined || ymd === null || ymd === "" ? null : String(ymd),
+    move_in_type: ad.moveInTypeName || null,
+  };
+}
+
+/** Merge a {articleNo -> {move_in_ymd, move_in_type}} map onto listing rows. */
+function attachMoveIn(items, byId) {
+  return items.map((item) => {
+    const found = byId[String(item.id)];
+    return {
+      ...item,
+      move_in_ymd: found ? found.move_in_ymd : null,
+      move_in_type: found ? found.move_in_type : null,
+    };
+  });
+}
+
 class Cdp {
   constructor(ws) {
     this.ws = ws;
@@ -117,6 +166,7 @@ async function main() {
   const tradeType = args["trade-type"] || "전세";
   const region = args.region || "";
   const maxPages = Number(args.pages || PAGE_LIMIT_DEFAULT);
+  const withMoveIn = truthy(args["with-move-in"]);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) fail("missing_coordinates", { hint: "--lat/--lng 필요" });
 
   const a = TYPE_CODE[propertyType];
@@ -200,6 +250,23 @@ async function main() {
     }
   };
 
+  // Same session, same auth as the list call -- just the detail endpoint the
+  // SPA hits when the user clicks a row.
+  const fetchArticleDetail = async (articleNo) => {
+    const url = `${ORIGIN}/api/articles/${articleNo}?complexNo=`;
+    const expr = `(async()=>{const r=await fetch(${JSON.stringify(url)},{headers:{accept:'application/json',authorization:${JSON.stringify(
+      authHeader || ""
+    )}}});if(!r.ok)return JSON.stringify({__err:r.status});return await r.text();})()`;
+    const res = await cdp.send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
+    const raw = res.result && res.result.value;
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
   let page1 = authHeader ? await fetchPage(1) : null;
   if (!page1 || page1.__err) {
     // Fall back to the body the page already received (unfiltered by trade type).
@@ -223,6 +290,27 @@ async function main() {
     isMore = Boolean(next.isMoreData);
   }
 
+  // 입주가능일 only exists on the article detail, never on the list rows, and
+  // it is usually the constraint that decides a search. Sweep it on request.
+  let rows = items;
+  if (withMoveIn && authHeader && items.length) {
+    const byId = {};
+    let failures = 0;
+    for (const item of items) {
+      const detail = await fetchArticleDetail(item.id);
+      if (!detail || detail.__err) {
+        failures += 1;
+      } else {
+        byId[String(item.id)] = parseMoveIn(detail);
+      }
+      await new Promise((r) => setTimeout(r, MOVE_IN_THROTTLE_MS));
+    }
+    rows = attachMoveIn(items, byId);
+    if (failures) notes.push(`move_in_detail_failed_for_${failures}_of_${items.length}`);
+  } else if (withMoveIn) {
+    notes.push("move_in_skipped_no_auth_header");
+  }
+
   ws.close();
   process.stdout.write(
     JSON.stringify(
@@ -234,9 +322,9 @@ async function main() {
         cdp_url: CDP_URL,
         query: { region, property_type: propertyType, trade_type: tradeType, lat, lng, zoom },
         notes,
-        count: items.length,
+        count: rows.length,
         has_more: isMore,
-        items,
+        items: rows,
       },
       null,
       1
@@ -244,7 +332,7 @@ async function main() {
   );
 }
 
-module.exports = { parseManwon, normalise, TRADE_CODE, TYPE_CODE };
+module.exports = { parseManwon, normalise, parseMoveIn, attachMoveIn, parseArgs, TRADE_CODE, TYPE_CODE };
 
 if (require.main === module) {
   main().catch((e) => fail("naver_cdp_failed", { error: String((e && e.message) || e) }));

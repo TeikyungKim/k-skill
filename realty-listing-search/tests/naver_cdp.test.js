@@ -5,7 +5,15 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert");
-const { parseManwon, normalise, TRADE_CODE, TYPE_CODE } = require("../scripts/naver_cdp.js");
+const {
+  parseManwon,
+  normalise,
+  parseMoveIn,
+  attachMoveIn,
+  parseArgs,
+  TRADE_CODE,
+  TYPE_CODE,
+} = require("../scripts/naver_cdp.js");
 
 test("parseManwon reads Naver price strings", () => {
   assert.strictEqual(parseManwon("2억 1,500"), 21500);
@@ -56,4 +64,48 @@ test("filter codes match the documented Naver values", () => {
   assert.deepStrictEqual(TRADE_CODE, { 매매: "A1", 전세: "B1", 월세: "B2" });
   assert.strictEqual(TYPE_CODE["오피스텔"], "OPST");
   assert.strictEqual(TYPE_CODE["원룸"], TYPE_CODE["빌라"]);
+});
+
+test("parseMoveIn keeps the date and the label apart", () => {
+  // The label says 즉시입주 while the date is a month out -- this really is what
+  // new.land returns, and filtering on the label would be wrong.
+  const got = parseMoveIn({
+    articleDetail: { moveInPossibleYmd: "20261030", moveInTypeName: "즉시입주" },
+  });
+  assert.deepStrictEqual(got, { move_in_ymd: "20261030", move_in_type: "즉시입주" });
+});
+
+test("parseMoveIn passes NOW through untouched", () => {
+  const got = parseMoveIn({ articleDetail: { moveInPossibleYmd: "NOW", moveInTypeName: "즉시입주" } });
+  assert.strictEqual(got.move_in_ymd, "NOW");
+});
+
+test("parseMoveIn survives a missing or empty detail", () => {
+  assert.deepStrictEqual(parseMoveIn(null), { move_in_ymd: null, move_in_type: null });
+  assert.deepStrictEqual(parseMoveIn({ articleDetail: {} }), { move_in_ymd: null, move_in_type: null });
+  assert.strictEqual(parseMoveIn({ articleDetail: { moveInPossibleYmd: "" } }).move_in_ymd, null);
+});
+
+test("attachMoveIn fills every row, nulling the ones that failed", () => {
+  const rows = attachMoveIn(
+    [{ id: "1", title: "a" }, { id: "2", title: "b" }],
+    { 1: { move_in_ymd: "NOW", move_in_type: "즉시입주" } }
+  );
+  assert.strictEqual(rows[0].move_in_ymd, "NOW");
+  assert.strictEqual(rows[0].title, "a");
+  assert.strictEqual(rows[1].move_in_ymd, null);
+  assert.strictEqual(rows[1].move_in_type, null);
+});
+
+test("parseArgs reads a valueless flag without eating the next one", () => {
+  const got = parseArgs(["--with-move-in", "--pages", "3"]);
+  assert.strictEqual(got["with-move-in"], true);
+  assert.strictEqual(got.pages, "3");
+});
+
+test("parseArgs still reads ordinary key/value pairs", () => {
+  const got = parseArgs(["--lat", "37.48", "--trade-type", "월세", "--with-move-in"]);
+  assert.strictEqual(got.lat, "37.48");
+  assert.strictEqual(got["trade-type"], "월세");
+  assert.strictEqual(got["with-move-in"], true);
 });

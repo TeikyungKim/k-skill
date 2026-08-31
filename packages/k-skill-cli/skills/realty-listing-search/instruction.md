@@ -53,6 +53,9 @@ npx -y @nomadamas/k-skill@0 exec realty-listing-search scripts/run_realty_listin
 # 네이버 딥링크까지 함께
 ... search --region 태평동 --prefer 성남 --provider zigbang,dabang,naver
 
+# 네이버를 브라우저로 실제 조회하고 입주가능일까지 채운다
+... search --region 문정동 --prefer 송파 --trade-type 월세 --property-type 오피스텔       --provider naver --naver-browser --naver-move-in --pages 4
+
 # 상세
 ... detail --provider zigbang --id 49974607
 ... detail --provider dabang --id 6a8cf11efcb1045b50d9261b
@@ -75,6 +78,7 @@ npx -y @nomadamas/k-skill@0 exec realty-listing-search scripts/run_realty_listin
 | `--pages` | 2 | 다방 페이지 수 |
 | `--geohash-precision` | 5 | 직방 geohash 자릿수 |
 | `--naver-browser` | 꺼짐 | 네이버를 브라우저(CDP)로 실제 조회 |
+| `--naver-move-in` | 꺼짐 | 네이버 매물마다 상세를 열어 입주가능일을 채운다 (매물당 +0.7초) |
 | `--node-bin` | `node` | `naver_cdp.js` 실행용 node |
 | `--naver-timeout` | 120 | 네이버 브라우저 조회 타임아웃(초) |
 
@@ -161,6 +165,19 @@ chrome.exe --remote-debugging-port=9222 --user-data-dir=<임시경로>
 `realtorName`(중개사), `buildingName`(건물명), `isSafeLessorOfHug`,
 그리고 **흔들지 않은 실제 좌표**.
 
+#### 입주가능일 — `--naver-move-in`
+
+입주가능일은 **목록에 없고 상세에만 있다.** `--naver-move-in`을 주면 목록을 받은
+뒤 매물마다 `GET /api/articles/{articleNo}?complexNo=` 를 같은 세션·같은 헤더로
+호출해 `move_in_ymd`와 `move_in_type`을 채운다. 매물당 0.7초를 쉰다.
+
+**`moveInTypeName`(=`move_in_type`)으로 거르면 안 된다.** 이 라벨이 "즉시입주"인데
+`moveInPossibleYmd`(=`move_in_ymd`)는 `20261106`인 매물이 실제로 존재한다. 라벨은
+표시용이고, 필터는 반드시 `move_in_ymd`로 건다.
+
+`move_in_ymd`는 `"NOW"`(즉시) 또는 `"YYYYMMDD"` 또는 `null`(상세에 값 없음)이다.
+`null`은 "입주 가능"이 아니라 "알 수 없음"이므로 중개사 확인이 필요하다.
+
 딥링크는 브라우저 사용 여부와 무관하게 항상 함께 낸다.
 
 ```
@@ -200,6 +217,10 @@ https://new.land.naver.com/complexes?ms=<lat>,<lng>,<zoom>&a=APT:PRE:ABYG:JGC&e=
 - `browser_not_reachable` — CDP 브라우저가 없다. 사용자가 직접 띄워야 한다.
 - `no_article_request_observed` — 지도가 렌더되기 전에 타임아웃했거나 그 위치에
   매물이 없다. `--naver-timeout`을 늘리거나 좌표를 확인한다.
+- `move_in_detail_failed_for_N_of_M` (notes) — `--naver-move-in` 스윕에서 일부
+  상세 호출이 실패했다. 그 매물의 `move_in_ymd`는 `null`로 남는다.
+- `move_in_skipped_no_auth_header` (notes) — 목록을 페이지 자체 응답으로 폴백해
+  읽어서 세션 헤더가 없다. 입주가능일 스윕은 건너뛴다.
 - `trade_type_filter_not_applied` (notes) — 필터 주입에 실패해 페이지 응답을 그대로
   읽었다는 뜻이다. 결과에 매매·월세가 섞여 있을 수 있으니 후처리로 걸러야 한다.
 - 특정 동에 매물이 0건 — 실제로 없는 경우가 많다. `--radius-km`를 키우거나
@@ -216,6 +237,9 @@ https://new.land.naver.com/complexes?ms=<lat>,<lng>,<zoom>&a=APT:PRE:ABYG:JGC&e=
   환산한다 — 원본 값을 그대로 쓰면 관리비가 1만 배로 부풀려진다.
 - `lat`/`lng`는 두 포털 모두 **의도적으로 흔든 좌표**(약 100m)다. 역 거리 랭킹에는 쓸 수 있지만 정확한 주소로 쓰면 안 된다.
 - 평 = m² / 3.305785.
+- `move_in_ymd`/`move_in_type`은 `--naver-move-in`을 준 네이버 결과에만 있다.
+  직방은 상세의 `residence.moveInAt`이 자주 비어 있고, 다방은 단건 상세가
+  로그인 전용이라 두 포털 모두 입주가능일을 신뢰할 수 없다.
 - 직방 geohash 5자리는 약 5km × 5km라 인접 동 매물이 함께 잡힌다. 결과의
   `address`로 반드시 확인한다.
 - 다방 `bbox`는 `--radius-km` 기준 사각형이라 직방보다 범위가 좁다. 두 provider의

@@ -36,6 +36,7 @@ def make_opts(**overrides) -> argparse.Namespace:
         geohash_precision=5,
         naver_zoom=15,
         naver_browser=False,
+        naver_move_in=False,
         node_bin="node",
         naver_timeout=120,
     )
@@ -294,6 +295,28 @@ class NaverBrowserAdapterTest(unittest.TestCase):
         self.assertEqual(items, [])
         self.assertTrue(any("browser_not_reachable" in e for e in errors))
         self.assertEqual(len(calls), 1)
+
+    def test_move_in_flag_reaches_the_helper_only_when_asked(self):
+        calls = []
+
+        class FakeProc:
+            stdout = json.dumps({"status": "ok", "count": 0, "items": [], "navigated": "u"})
+            stderr = ""
+
+        original = mod.subprocess.run
+        mod.subprocess.run = lambda cmd, **kw: (calls.append(cmd), FakeProc())[1]
+        try:
+            mod.naver_browser_search(
+                NaverLinkTest.REGION, make_opts(property_types=["오피스텔"])
+            )
+            mod.naver_browser_search(
+                NaverLinkTest.REGION,
+                make_opts(property_types=["오피스텔"], naver_move_in=True),
+            )
+        finally:
+            mod.subprocess.run = original
+        self.assertNotIn("--with-move-in", calls[0])
+        self.assertIn("--with-move-in", calls[1])
 
     def test_rows_dedupe_across_property_types(self):
         """원룸/빌라 share one Naver type code, so the same rows come back twice."""

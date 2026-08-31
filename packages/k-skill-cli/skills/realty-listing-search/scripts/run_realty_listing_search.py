@@ -687,6 +687,8 @@ def naver_browser_search(
             "--region", region.full_name,
             "--pages", str(opts.pages),
         ]
+        if opts.naver_move_in:
+            cmd.append("--with-move-in")
         try:
             proc = subprocess.run(cmd, capture_output=True, timeout=opts.naver_timeout, encoding="utf-8")
         except (subprocess.TimeoutExpired, OSError) as exc:
@@ -977,13 +979,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--limit", type=int, default=30, help="출력 매물 수 (기본 30)")
     s.add_argument("--radius-km", type=float, default=1.5, help="다방 bbox 반경 km (기본 1.5)")
-    s.add_argument("--pages", type=int, default=2, help="다방 페이지 수 (기본 2)")
+    s.add_argument("--pages", type=int, default=2, help="다방·네이버 페이지 수 (기본 2)")
     s.add_argument("--geohash-precision", type=int, default=5, help="직방 geohash 자릿수 (기본 5, 약 5km)")
     s.add_argument("--naver-zoom", type=int, default=15, help="네이버 지도/딥링크 줌 레벨 (기본 15)")
     s.add_argument(
         "--naver-browser",
         action="store_true",
         help="네이버를 딥링크가 아니라 실제 브라우저(CDP)로 조회한다. KSKILL_CHROME_CDP_URL 필요.",
+    )
+    s.add_argument(
+        "--naver-move-in",
+        action="store_true",
+        help="네이버 매물마다 상세를 열어 입주가능일(move_in_ymd)을 채운다. --naver-browser 필요. "
+        "매물 1건당 약 0.7초가 더 걸린다.",
     )
     s.add_argument("--node-bin", default="node", help="naver_cdp.js 실행용 node 실행파일 (기본 node)")
     s.add_argument("--naver-timeout", type=int, default=120, help="네이버 브라우저 조회 타임아웃 초 (기본 120)")
