@@ -3,6 +3,12 @@
 This repository inherits the broader oh-my-codex guidance from the parent environment.
 These rules are repo-specific and apply to everything under this directory.
 
+## Shared project instructions
+
+- Before starting work in this repository, read `CLAUDE.md` completely as UTF-8. In Windows PowerShell 5.1, use `Get-Content -LiteralPath .\CLAUDE.md -Raw -Encoding UTF8`.
+- Follow `CLAUDE.md` as repository-local guidance unless it conflicts with higher-priority instructions or this `AGENTS.md`.
+- Treat both `AGENTS.md` and `CLAUDE.md` as scoped to this repository and its subdirectories only.
+
 ## Release automation rules
 
 - Node packages live under `packages/*` and use npm workspaces.
