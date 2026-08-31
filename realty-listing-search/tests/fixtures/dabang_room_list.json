@@ -1,0 +1,61 @@
+{
+ "_note": "Trimmed capture of GET /api/v5/room-list/category/one-two/bbox (2026-08-30). Only the fields the adapter reads are kept.",
+ "code": 200,
+ "result": {
+  "roomList": [
+   {
+    "seq": 58637142,
+    "id": "6a8cf11efcb1045b50d9261b",
+    "roomTypeName": "투룸",
+    "randomLocation": {
+     "lat": 37.4485279477929,
+     "lng": 127.133015908437
+    },
+    "complexName": null,
+    "roomTitle": "ㅂ.가천대역 도보15분정도에  엘에치가능  방2",
+    "roomDesc": "2층, 31.03m², 관리비 없음",
+    "priceTypeName": "전세",
+    "priceTitle": "6500",
+    "gid": 7417,
+    "dongName": "태평동"
+   },
+   {
+    "seq": 58600001,
+    "id": "6a62ed871e87d65bb66f1c98",
+    "roomTypeName": "원룸",
+    "randomLocation": {
+     "lat": 37.4441,
+     "lng": 127.1402
+    },
+    "complexName": null,
+    "roomTitle": "수진역10분  분리형원룸",
+    "roomDesc": "3층, 23.14m², 관리비 3만",
+    "priceTypeName": "전세",
+    "priceTitle": "3000",
+    "gid": 7467,
+    "dongName": "신흥동"
+   },
+   {
+    "seq": 58600002,
+    "id": "6a8baa275abb957cf1b5a29b",
+    "roomTypeName": "원룸",
+    "randomLocation": {
+     "lat": 37.4409,
+     "lng": 127.1385
+    },
+    "complexName": null,
+    "roomTitle": "태평역  도보5분거리 풀옵션 올수리 원룸",
+    "roomDesc": "반지층, 23.14m², 관리비 없음",
+    "priceTypeName": "월세",
+    "priceTitle": "1000/50",
+    "gid": 7417,
+    "dongName": "태평동"
+   }
+  ],
+  "total": 51,
+  "limit": 20,
+  "hasMore": true,
+  "page": 1
+ },
+ "responseTime": "2026-08-30 13:40:00"
+}

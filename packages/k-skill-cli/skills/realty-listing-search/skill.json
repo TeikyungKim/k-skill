@@ -1,0 +1,8 @@
+{
+  "name": "realty-listing-search",
+  "description": "직방·다방 공개 JSON 표면으로 한국 부동산 매물(호가)을 지역·거래유형·보증금 기준으로 통합 검색하고, 봇 차단된 네이버페이 부동산은 스크래핑 대신 공식 딥링크를 만든다. 조회 전용.",
+  "profiles": [
+    "lookup"
+  ],
+  "frontmatter": "name: realty-listing-search\ndescription: 직방·다방 공개 JSON 표면으로 한국 부동산 매물(호가)을 지역·거래유형·보증금 기준으로 통합 검색하고, 봇 차단된 네이버페이 부동산은 스크래핑 대신 공식 딥링크를 만든다. 조회 전용.\nlicense: MIT\nmetadata:\n  category: real-estate\n  locale: ko-KR\n  phase: v1"
+}

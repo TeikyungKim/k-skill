@@ -1,0 +1,140 @@
+{
+ "items": [
+  {
+   "item_id": 49648622,
+   "section_type": null,
+   "images_thumbnail": "https://ic.zigbang.com/ic/items/49648622/1.jpg",
+   "sales_type": "전세",
+   "sales_title": "전세",
+   "deposit": 25000,
+   "rent": 0,
+   "size_m2": 52.8,
+   "공급면적": {
+    "m2": 52.8,
+    "p": "16"
+   },
+   "전용면적": {
+    "m2": 52.8,
+    "p": "16"
+   },
+   "계약면적": null,
+   "room_type_title": null,
+   "floor": "4",
+   "floor_string": "4",
+   "building_floor": "4",
+   "title": "리모델링된 넓은 빌라형 2룸",
+   "is_first_movein": null,
+   "room_type": "04",
+   "status": true,
+   "tags": [],
+   "service_type": "빌라",
+   "random_location": {
+    "lat": 37.4437204444368,
+    "lng": 127.13743173243
+   },
+   "location": {
+    "lat": 37.4437204444368,
+    "lng": 127.13743173243
+   },
+   "manage_cost": null,
+   "reg_date": "2026-08-20T13:37:33+09:00",
+   "is_new": false,
+   "addressOrigin": {
+    "local1": "경기도",
+    "local2": "성남시 수정구",
+    "local3": "태평동",
+    "local4": "",
+    "address2": "3392",
+    "localText": "성남시 수정구 태평동",
+    "fullText": "경기도 성남시 수정구 태평동"
+   },
+   "address": "성남시 수정구 태평동",
+   "action": {
+    "isChecked": false,
+    "checkedAt": null,
+    "isRead": false,
+    "readAt": null,
+    "isInquired": false,
+    "inquiredAt": null,
+    "isRewarded": false,
+    "rewardedAt": null,
+    "isReported": false,
+    "reportedAt": null,
+    "isZzim": false,
+    "zzimCount": 0
+   },
+   "contract": "",
+   "is_zzim": false,
+   "address1": "경기도 성남시 수정구 태평동",
+   "address2": null,
+   "address3": null,
+   "item_bm_type": "ZIGBANG",
+   "lessorTypes": [],
+   "badges": []
+  }
+ ],
+ "itemSummaries": [
+  {
+   "id": 49648622,
+   "serviceType": "빌라",
+   "title": "리모델링된 넓은 빌라형 2룸",
+   "imagesThumbnail": "https://ic.zigbang.com/ic/items/49648622/1.jpg",
+   "price": {
+    "salesType": "전세",
+    "deposit": 25000,
+    "isShortTerm": false
+   },
+   "fee": 0,
+   "status": true,
+   "itemStatus": "open",
+   "bmType": "ZIGBANG",
+   "action": {
+    "isChecked": false,
+    "checkedAt": null,
+    "isRead": false,
+    "readAt": null,
+    "isInquired": false,
+    "inquiredAt": null,
+    "isRewarded": false,
+    "rewardedAt": null,
+    "isReported": false,
+    "reportedAt": null,
+    "isZzim": false,
+    "zzimCount": 60
+   },
+   "address": {
+    "local1": "경기도",
+    "local2": "성남시 수정구",
+    "local3": "태평동",
+    "local4": "",
+    "address2": "3392",
+    "localText": "성남시 수정구 태평동",
+    "fullText": "경기도 성남시 수정구 태평동"
+   },
+   "residence": {
+    "size": {
+     "sizeM2": 52.8
+    },
+    "sizeM2": 52.8,
+    "sizeSupply": {
+     "m2": 52.8,
+     "p": "16"
+    },
+    "sizeExclusive": {
+     "m2": 52.8,
+     "p": "16"
+    },
+    "floor": "4",
+    "buildingFloor": "4",
+    "roomType": "04"
+   },
+   "location": {
+    "lat": 37.4437204444368,
+    "lng": 127.13743173243
+   },
+   "moveinAt": "2026-10-31",
+   "contract": ""
+  }
+ ],
+ "totalCount": 1
+}

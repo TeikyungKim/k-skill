@@ -116,6 +116,7 @@
     "./popbill",
     "./public-restroom-nearby",
     "./real-estate-search",
+    "./realty-listing-search",
     "./rhwp-advanced",
     "./rhwp-edit",
     "./s2b-notice-search",
