@@ -161,6 +161,36 @@ chrome.exe --remote-debugging-port=9222 --user-data-dir=<임시경로>
 
 `KSKILL_CHROME_CDP_URL`(기본 `http://127.0.0.1:9222`)로 엔드포인트를 바꾼다.
 
+#### Windows: 브라우저가 툴 호출과 함께 죽는 경우
+
+에이전트 하네스에서 위 명령을 그대로 실행하면 **CDP가 잠깐 열렸다가 조회 도중
+끊긴다.** 실행한 셸이 job object에 묶여 있고, 툴 호출이 끝날 때 자식 프로세스가
+함께 종료되기 때문이다. `&` 백그라운드도 PowerShell `Start-Process`도 여전히
+자식이라 같이 죽는다. 증상은 `browser_not_reachable`, 또는 스윕 중간에
+node가 **stdout 없이 exit 0** 으로 조용히 끝나는 것이다(응답을 기다리던
+CDP promise가 영영 안 풀려 이벤트 루프가 비는 패턴).
+
+WMI로 띄우면 서비스가 대신 생성해 job object 밖에 남는다.
+
+```powershell
+$cmd = '"C:\Program Files\Google\Chrome\Application\chrome.exe" ' +
+       '--remote-debugging-port=9222 --user-data-dir="<임시경로>" ' +
+       '--no-first-run --no-default-browser-check about:blank'
+Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$cmd}
+```
+
+끝나면 **`--user-data-dir` 경로로 매칭해서 그 프로세스만** 닫는다. `Stop-Process
+-Name chrome`은 사용자가 쓰던 창까지 전부 죽인다.
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
+  Where-Object { $_.CommandLine -like "*<임시경로>*" } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+`--naver-move-in` 스윕은 매물당 0.7초가 붙어 60건이면 1분을 넘긴다. 툴/셸
+타임아웃도 그만큼 늘려 잡는다.
+
 응답 필드는 다른 두 포털보다 풍부하다 — `articleConfirmYmd`(확인일자),
 `realtorName`(중개사), `buildingName`(건물명), `isSafeLessorOfHug`,
 그리고 **흔들지 않은 실제 좌표**.
