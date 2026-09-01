@@ -45,6 +45,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 | 시외버스 예매 | `intercity-bus-booking` | 티머니 배차·좌석·요금·임시 선점 조회와 예매 지원 | 필요 | [시외버스 예매 가이드](docs/features/intercity-bus-booking.md) |
 | 자연휴양림 빈 객실 조회 | `foresttrip-vacancy` | 공식 빈 객실 조회와 CAPTCHA 전 시설 선택·결제 직전 수동 인계 | 필요 | [자연휴양림 빈 객실 조회 가이드](docs/features/foresttrip-vacancy.md) |
 | 지자체 캠핑장 빈자리 조회 | `korean-campsite-vacancy` | 연곡해변 솔향기·자라섬·망상·광명 도덕산·삼척 장호비치 등 지자체 운영 캠핑장의 날짜별 존 잔여 면수 조회 (provider adapter 방식, 조회 전용) | 일부 필요(동해시 4곳) | [지자체 캠핑장 빈자리 조회 가이드](docs/features/korean-campsite-vacancy.md) |
+| 캠핑장 추천순 정렬 | `campsite-recommend` | foresttrip-vacancy·korean-campsite-vacancy 조회 결과를 카카오맵 공개 평점 기반 점수로 정렬하고, 출발지를 주면 자동차 거리·통행료를 붙이는 read-only 정렬기 | 불필요 | [캠핑장 추천 순위 가이드](docs/features/campsite-recommend.md) |
 | 카카오톡 Mac 아카이브 검색 | `kakaotalk-mac` | `katok`으로 macOS 카카오톡 로컬 아카이브를 동기화하고 keyword/BM25/semantic 검색 | 불필요(로컬 앱/권한 필요) | [카카오톡 Mac 아카이브 검색](docs/features/kakaotalk-mac.md) |
 | 서울 지하철 도착정보 조회 | `seoul-subway-arrival` | 서울 지하철 역 기준 실시간 도착 예정 열차 확인 | 불필요 | [서울 지하철 도착정보 가이드](docs/features/seoul-subway-arrival.md) |
 | 서울 실시간 혼잡도 조회 | `seoul-density` | 서울 주요 121개 핫스팟의 실시간 혼잡도 단계와 추정 인구 조회 | 불필요 | [서울 실시간 혼잡도 가이드](docs/features/seoul-density.md) |
@@ -145,6 +146,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 | 번개장터 검색 | `bunjang-search` | 번개장터 검색, 상세조회, 선택적 찜/채팅, AI TOON export | 불필요 | [번개장터 검색 가이드](docs/features/bunjang-search.md) |
 | 당근 중고거래 검색 | `daangn-used-goods-search` | 당근 중고거래 공개 웹 데이터 표면으로 키워드·지역 기반 매물 검색과 상세 조회 | 불필요 | [당근 중고거래 검색 가이드](docs/features/daangn-used-goods-search.md) |
 | 당근부동산 검색 | `daangn-realty-search` | 당근부동산 공개 웹 데이터 표면으로 지역 기반 부동산 매물 검색과 상세 확인 | 불필요 | [당근부동산 검색 가이드](docs/features/daangn-realty-search.md) |
+| 직방·다방 매물 검색 | `realty-listing-search` | 직방·다방 공개 JSON 표면으로 매물(호가)을 지역·거래유형·보증금 기준 통합 검색, 네이버페이 부동산은 공식 딥링크 생성 (조회 전용) | 불필요 | [직방·다방 매물 검색 가이드](docs/features/realty-listing-search.md) |
 | 당근알바 검색 | `daangn-jobs-search` | 당근알바 공개 웹 데이터 표면으로 키워드·지역 기반 알바 공고 검색과 상세 조회 | 불필요 | [당근알바 검색 가이드](docs/features/daangn-jobs-search.md) |
 | 당근중고차 검색 | `daangn-cars-search` | 당근중고차 공개 웹 데이터 표면으로 지역·가격 조건 기반 차량 검색과 상세 조회 | 불필요 | [당근중고차 검색 가이드](docs/features/daangn-cars-search.md) |
 | 한국어 맞춤법 검사 | `korean-spell-check` | 한국어 텍스트 맞춤법/문법 검사 및 교정안 정리 | 불필요 | [한국어 맞춤법 검사 가이드](docs/features/korean-spell-check.md) |
@@ -204,6 +206,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 - [시외버스 예매](docs/features/intercity-bus-booking.md)
 - [자연휴양림 빈 객실 조회](docs/features/foresttrip-vacancy.md)
 - [지자체 캠핑장 빈자리 조회](docs/features/korean-campsite-vacancy.md)
+- [캠핑장 추천 순위](docs/features/campsite-recommend.md)
 - [카카오톡 Mac 아카이브 검색](docs/features/kakaotalk-mac.md)
 - [서울 지하철 도착정보 조회](docs/features/seoul-subway-arrival.md)
 - [서울 실시간 혼잡도 조회](docs/features/seoul-density.md)
@@ -297,6 +300,7 @@ npx --yes skills add NomaDamas/k-skill --skill srt-booking -g
 - [번개장터 검색 가이드](docs/features/bunjang-search.md)
 - [당근 중고거래 검색 가이드](docs/features/daangn-used-goods-search.md)
 - [당근부동산 검색 가이드](docs/features/daangn-realty-search.md)
+- [직방·다방 매물 검색 가이드](docs/features/realty-listing-search.md)
 - [당근알바 검색 가이드](docs/features/daangn-jobs-search.md)
 - [당근중고차 검색 가이드](docs/features/daangn-cars-search.md)
 - [한국어 맞춤법 검사 가이드](docs/features/korean-spell-check.md)

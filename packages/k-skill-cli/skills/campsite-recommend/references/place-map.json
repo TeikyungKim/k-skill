@@ -1,0 +1,320 @@
+{
+  "_meta": {
+    "description": "campsite id -> Kakao Map place id curated mapping. foresttrip keys are 숲나들e hmpgId, providers keys are korean-campsite-vacancy provider id.",
+    "curation_note": "자동 이름 매칭 금지. 각 place id는 place.map.kakao.com/<id> 를 열어 시설·주소가 일치하는지 사람이 확인한 뒤에만 추가한다 (2026-08-29 봉황산 오매핑 사고 참고).",
+    "curated_at": "2026-08-29",
+    "entries": {
+      "foresttrip": 50,
+      "providers": 11
+    }
+  },
+  "foresttrip": {
+    "0101": {
+      "name": "유명산자연휴양림",
+      "region": "가평군",
+      "kakao_place_id": "8033003"
+    },
+    "0103": {
+      "name": "산음자연휴양림",
+      "region": "양평군",
+      "kakao_place_id": "10445489"
+    },
+    "0105": {
+      "name": "신불산자연휴양림",
+      "region": "울주군",
+      "kakao_place_id": "736232390"
+    },
+    "0106": {
+      "name": "청태산자연휴양림",
+      "region": "횡성군",
+      "kakao_place_id": "26139470"
+    },
+    "0107": {
+      "name": "삼봉자연휴양림",
+      "region": "홍천군",
+      "kakao_place_id": "7926947"
+    },
+    "0111": {
+      "name": "대관령자연휴양림",
+      "region": "강릉시",
+      "kakao_place_id": "8302996"
+    },
+    "0112": {
+      "name": "미천골자연휴양림",
+      "region": "양양군",
+      "kakao_place_id": "7879147"
+    },
+    "0116": {
+      "name": "화천숲속야영장",
+      "region": "화천군",
+      "kakao_place_id": "1844686751"
+    },
+    "0182": {
+      "name": "칠보산자연휴양림",
+      "region": "영덕군",
+      "kakao_place_id": "10831238"
+    },
+    "0191": {
+      "name": "오서산자연휴양림",
+      "region": "보령시",
+      "kakao_place_id": "8026254"
+    },
+    "0193": {
+      "name": "통고산자연휴양림",
+      "region": "울진군",
+      "kakao_place_id": "25618758"
+    },
+    "0194": {
+      "name": "운장산자연휴양림",
+      "region": "진안군",
+      "kakao_place_id": "26621897"
+    },
+    "0220": {
+      "name": "용현자연휴양림",
+      "region": "서산시",
+      "kakao_place_id": "8670049"
+    },
+    "0301": {
+      "name": "신시도자연휴양림",
+      "region": "군산시",
+      "kakao_place_id": "1780235263"
+    },
+    "0303": {
+      "name": "무의도자연휴양림",
+      "region": "인천시",
+      "kakao_place_id": "1925923281"
+    },
+    "ID02030002": {
+      "name": "가리산자연휴양림",
+      "region": "홍천군",
+      "kakao_place_id": "8118764"
+    },
+    "ID02030006": {
+      "name": "팔공산금화자연휴양림",
+      "region": "칠곡군",
+      "kakao_place_id": "24980564"
+    },
+    "ID02030012": {
+      "name": "영인산자연휴양림",
+      "region": "아산시",
+      "kakao_place_id": "8010414"
+    },
+    "ID02030013": {
+      "name": "서귀포자연휴양림",
+      "region": "서귀포시",
+      "kakao_place_id": "8375194"
+    },
+    "ID02030014": {
+      "name": "붉은오름자연휴양림",
+      "region": "서귀포시",
+      "kakao_place_id": "12979413"
+    },
+    "ID02030017": {
+      "name": "수레의산자연휴양림",
+      "region": "음성군",
+      "kakao_place_id": "8430849"
+    },
+    "ID02030023": {
+      "name": "동두천자연휴양림",
+      "region": "동두천시",
+      "kakao_place_id": "1008363661"
+    },
+    "ID02030025": {
+      "name": "고산자연휴양림",
+      "region": "완주군",
+      "kakao_place_id": "8178392"
+    },
+    "ID02030031": {
+      "name": "용인자연휴양림",
+      "region": "용인시",
+      "kakao_place_id": "11337761"
+    },
+    "ID02030033": {
+      "name": "생거진천자연휴양림",
+      "region": "진천군",
+      "kakao_place_id": "25589927"
+    },
+    "ID02030038": {
+      "name": "대운산자연휴양림",
+      "region": "양산시",
+      "kakao_place_id": "25924559"
+    },
+    "ID02030040": {
+      "name": "태학산자연휴양림",
+      "region": "천안시",
+      "kakao_place_id": "8567204"
+    },
+    "ID02030045": {
+      "name": "흑석산자연휴양림",
+      "region": "해남군",
+      "kakao_place_id": "8145808"
+    },
+    "ID02030050": {
+      "name": "축령산자연휴양림",
+      "region": "남양주시",
+      "kakao_place_id": "12454595"
+    },
+    "ID02030054": {
+      "name": "옥화자연휴양림",
+      "region": "청주시",
+      "kakao_place_id": "8017932"
+    },
+    "ID02030056": {
+      "name": "교래자연휴양림",
+      "region": "제주시",
+      "kakao_place_id": "26625268"
+    },
+    "ID02030058": {
+      "name": "순천자연휴양림",
+      "region": "순천시",
+      "kakao_place_id": "12984521"
+    },
+    "ID02030063": {
+      "name": "금산산림문화타운",
+      "region": "금산군",
+      "kakao_place_id": "838619443"
+    },
+    "ID02030068": {
+      "name": "오도산자연휴양림",
+      "region": "합천군",
+      "kakao_place_id": "8017688"
+    },
+    "ID02030070": {
+      "name": "성불산자연휴양림",
+      "region": "괴산군",
+      "kakao_place_id": "26645197"
+    },
+    "ID02030072": {
+      "name": "구재봉자연휴양림",
+      "region": "하동군",
+      "kakao_place_id": "27583417"
+    },
+    "ID02030073": {
+      "name": "구수곡자연휴양림",
+      "region": "울진군",
+      "kakao_place_id": "8190877"
+    },
+    "ID02030077": {
+      "name": "금원산자연휴양림",
+      "region": "거창군",
+      "kakao_place_id": "17579865"
+    },
+    "ID02030078": {
+      "name": "성주산자연휴양림",
+      "region": "보령시",
+      "kakao_place_id": "7958700"
+    },
+    "ID02030084": {
+      "name": "와룡자연휴양림",
+      "region": "장수군",
+      "kakao_place_id": "10614599"
+    },
+    "ID02030089": {
+      "name": "좌구산휴양랜드",
+      "region": "증평군",
+      "kakao_place_id": "12638233"
+    },
+    "ID02030092": {
+      "name": "서운산자연휴양림",
+      "region": "안성시",
+      "kakao_place_id": "971887949"
+    },
+    "ID02030097": {
+      "name": "봉황산자연휴양림",
+      "region": "여수시",
+      "kakao_place_id": "25044786"
+    },
+    "ID02030106": {
+      "name": "장태산자연휴양림",
+      "region": "대전시",
+      "kakao_place_id": "1528777731"
+    },
+    "ID02030108": {
+      "name": "무주향로산자연휴양림",
+      "region": "무주군",
+      "kakao_place_id": "90859827"
+    },
+    "ID02030112": {
+      "name": "사천 케이블카 자연휴양림",
+      "region": "사천시",
+      "kakao_place_id": "225867771"
+    },
+    "ID02030115": {
+      "name": "도래재자연휴양림",
+      "region": "밀양시",
+      "kakao_place_id": "1015284192"
+    },
+    "ID02030117": {
+      "name": "대봉캠핑랜드",
+      "region": "함양군",
+      "kakao_place_id": "1577486397"
+    },
+    "ID02030118": {
+      "name": "무봉산 자연휴양림",
+      "region": "화성시",
+      "kakao_place_id": "1541579160"
+    },
+    "ID02030122": {
+      "name": "성수산왕의숲자연휴양림",
+      "region": "임실군",
+      "kakao_place_id": "1319212802"
+    }
+  },
+  "providers": {
+    "donghae-chuam": {
+      "name": "추암오토캠핑장",
+      "region": "동해시",
+      "kakao_place_id": "2109864219"
+    },
+    "donghae-mangsang": {
+      "name": "망상오토캠핑리조트",
+      "region": "동해시",
+      "kakao_place_id": "816303389"
+    },
+    "donghae-mangsang2": {
+      "name": "망상제2오토캠핑장",
+      "region": "동해시",
+      "kakao_place_id": "25115394"
+    },
+    "donghae-mureung": {
+      "name": "무릉힐링캠핑장",
+      "region": "동해시",
+      "kakao_place_id": "11250175"
+    },
+    "gmuc-dodeoksan": {
+      "name": "도덕산캠핑장",
+      "region": "광명시",
+      "kakao_place_id": "54128282"
+    },
+    "gtdc-badanaeum": {
+      "name": "강릉바다내음캠핑장",
+      "region": "강릉시",
+      "kakao_place_id": "1783440894"
+    },
+    "gtdc-ojuk": {
+      "name": "강릉오죽한옥마을",
+      "region": "강릉시",
+      "kakao_place_id": "408919712"
+    },
+    "gtdc-yeongok": {
+      "name": "연곡해변 솔향기캠핑장",
+      "region": "강릉시",
+      "kakao_place_id": "24925337"
+    },
+    "maketicket-hyangnam": {
+      "name": "화성시향남오토캠핑장",
+      "region": "화성시",
+      "kakao_place_id": "808547362"
+    },
+    "maketicket-jangho": {
+      "name": "장호비치캠핑장",
+      "region": "삼척시",
+      "kakao_place_id": "385621254"
+    },
+    "thankq-jaraseom": {
+      "name": "자라섬캠핑장",
+      "region": "가평군",
+      "kakao_place_id": "8057455"
+    }
+  }
+}

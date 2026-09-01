@@ -1,0 +1,9 @@
+{
+  "name": "campsite-recommend",
+  "description": "foresttrip-vacancy·korean-campsite-vacancy 조회 결과를 받아 카카오맵 공개 평점(베이지안 보정 70% + 리뷰 규모 30%)으로 추천 순위를 매기고, 출발지를 주면 자동차 거리·시간·통행료를 붙인다. 큐레이션된 place id 매핑만 사용하는 read-only 정렬기.",
+  "profiles": [
+    "proxy",
+    "lookup"
+  ],
+  "frontmatter": "name: campsite-recommend\ndescription: foresttrip-vacancy·korean-campsite-vacancy 조회 결과를 받아 카카오맵 공개 평점(베이지안 보정 70% + 리뷰 규모 30%)으로 추천 순위를 매기고, 출발지를 주면 자동차 거리·시간·통행료를 붙인다. 큐레이션된 place id 매핑만 사용하는 read-only 정렬기.\nlicense: MIT\nmetadata:\n  category: travel\n  locale: ko-KR\n  phase: v1"
+}
