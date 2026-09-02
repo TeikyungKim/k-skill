@@ -154,19 +154,37 @@ npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_va
   --provider gtdc-yeongok --dates 20260905 --zone 글램핑 --include-full --json
 ```
 
-### 4. Summarize results conservatively
+### 4. 연박 질문은 밤 전부 + 기준선 날짜를 함께 넘긴다
+
+"10/2~10/5 3박" 같은 질문에서 밤은 10/2·10/3·10/4다. **퇴실일은 넘기지 않는다.**
+
+`--dates`에 밤 전부를 넣는다. 이 스킬에는 `--nights` 옵션이 없고, 존별 잔여 면수는 **날짜 단위 집계**라서 "같은 사이트가 세 밤 연속 비어 있는가"는 알 수 없다. 세 밤 모두 잔여가 있어도 **같은 자리인지는 확정할 수 없다**는 점을 반드시 함께 전달한다. 사이트 단위 확정이 필요하면 공식 예약 화면으로 넘긴다.
+
+`donghae`는 여기에 규칙이 하나 더 붙는다. **예약창이 하루치씩 열리지만 연박은 미오픈 날짜까지 한 번에 뻗는다.** 따라서
+
+- **N박의 승부는 첫 밤이 열리는 날 11:00에 끝난다.** 금·토·일 3박이면 그 **금요일의 30일 전 11:00**이 유일한 기회다. 마지막 밤이 열릴 때까지 기다리라고 안내하면 안 된다
+- 미오픈 날짜의 숫자가 연박으로 이미 깎였는지 보려면 **연박이 닿을 수 없는 먼 미개시 날짜를 기준선으로 함께 조회**한다
+
+```bash
+npx -y @nomadamas/k-skill@0 exec korean-campsite-vacancy scripts/run_campsite_vacancy.py -- \
+  --provider donghae-mangsang --dates 20261002,20261003,20261004,20261009 --include-full --json
+```
+
+10/9(기준선)보다 10/3·10/4가 낮으면 그만큼 연박이 이미 나간 것이다. 근거는 `npx -y @nomadamas/k-skill@0 read korean-campsite-vacancy references/PROVIDERS.md`의 `donghae` 연박 절에 있다.
+
+### 5. Summarize results conservatively
 
 - 조회 날짜와 캠핑장명
 - 존별 잔여 면수 (마감이면 마감이라고 쓴다)
 - 시즌 구분(성수기/준성수기/비수기)이 있으면 요금 판단에 영향을 주므로 함께 전달
 - 요금이 함께 오면(`thankq`) 같이 전달한다. 주말·주중 요금이 다르다
-- **`booking_status`가 `open`이 아니면 그 사실을 먼저 말한다.** 특히 `not_open`은 예약창이 안 열린 날이라 숫자가 잔여가 아니라 **총 정원**이다. 이걸 빈자리처럼 전달하지 않는다
+- **`booking_status`가 `open`이 아니면 그 사실을 먼저 말한다.** 특히 `not_open`은 예약창이 안 열린 날이라 **숫자를 빈자리로 전달하지 않는다.** 총 정원이라고 단정하지도 않는다. `donghae`에서는 연박이 미오픈 날짜 재고를 이미 먹었을 수 있다(위 4단계)
 - `not_open`은 `donghae`(이용일 30일 전 오픈), `thankq`(예약 페이지의 `res_able_max_dt` 이후), `dzsmart`(해당 월 달력 미공개) 세 경로에서 나온다. 셋 다 **마감이 아니라 "아직 열리지 않음"**이므로 언제 열리는지와 함께 전달한다
 - `fetch_failures`가 0이 아니면 실패한 provider와 실패 범위(`scope`)를 함께 보고
 
 빈자리가 없으면 **"조회 시점 기준 예약 가능 사이트 없음"** 이라고 명확히 말한다. 잔여 면수는 실시간으로 바뀌므로 실제 예약 화면에서 재확인될 수 있음을 덧붙인다.
 
-### 5. Hand off to the official booking page
+### 6. Hand off to the official booking page
 
 예약을 원하면 공식 예약 페이지 URL을 그대로 안내한다.
 
@@ -182,6 +200,8 @@ https://camping.gtdc.or.kr/pub/reserv.do
 - 조회 helper를 최소 1회 실행했다.
 - 빈자리가 있으면 날짜/캠핑장/존/잔여 면수를 정리했다.
 - 빈자리가 없으면 없다고 명확히 말했다.
+- 연박 질문이면 밤 전부를 조회했고, 존별 잔여로는 **같은 자리 연속 여부를 확정할 수 없다**는 점을 전달했다.
+- `donghae` 연박이면 첫 밤이 열리는 날 11:00이 기회라고 말했고, 미오픈 날짜 숫자를 잔여나 총 정원으로 전달하지 않았다.
 - 레지스트리에 없는 캠핑장을 임의 URL로 추측 조회하지 않았다.
 - 캡차·본인인증·결제 구간은 사용자에게 넘겼다.
 
@@ -196,7 +216,10 @@ https://camping.gtdc.or.kr/pub/reserv.do
 - `donghae` credential 누락: `KSKILL_DONGHAE_ID` / `KSKILL_DONGHAE_PASSWORD` 확인. 값이 `replace-me`면 미설정으로 처리된다
 - `donghae` 로그인 실패: 아이디/비밀번호를 확인한다. 대신 캡차를 풀지 않는다
 - `donghae` NOPASS 응답: 사이트 흐름이 바뀐 것이다. **캡차를 우회하지 말고** 실패로 보고한다
-- 미래 날짜인데 모든 시설이 만석으로 나옴: `booking_status: not_open`인지 확인한다. 동해시는 이용일 **30일 전 오전 11시**에 예약창을 연다. 그 전에는 총 정원이 그대로 조회된다
+- `donghae` `Page.goto: net::ERR_ABORTED`: 월 달력 이동에서 간헐 발생한다. 어댑터에 재시도가 없으므로 **같은 명령을 그대로 다시 실행**한다. 2026-09-02에 망상이 2회 연속 실패 후 3회차에 통과했다. 이걸 "조회 불가"로 결론내지 않는다
+- 미래 날짜인데 모든 시설이 만석으로 나옴: `booking_status: not_open`인지 확인한다. 동해시는 이용일 **30일 전 오전 11시**에 예약창을 연다
+- `donghae` 미오픈 날짜 숫자를 총 정원으로 오독: 연박이 미오픈 날짜 재고를 이미 먹었을 수 있다. **먼 미개시 날짜를 기준선으로 함께 조회**해 비교한다. 위 workflow 4단계 참고
+- `donghae` 오픈 당일 조회가 몇 분 만에 무의미해짐: 연휴 구간은 오픈 직후 소진이 매우 빠르다. 망상 10/2분은 2026-09-02 11:00 오픈 후 **22분 만에 전 존 마감**됐다. 조회 시각을 반드시 함께 전달한다
 - `booking_status: unknown`: 달력 라벨이 바뀐 것이다. 예약 가능으로 단정하지 말고 사용자에게 공식 화면 확인을 안내한다
 - `wait_for_selector` timeout: 예약 시스템 점검 중이거나 해당 월이 아직 오픈 전이다. 월을 바꿔 재확인하고, 그래도 비면 "해당 월 예약 미오픈"으로 보고한다
 - `dzsmart` 요청 월이 달력에 없음: 그 달 예약이 아직 안 열린 것이다. 결과에서 조용히 빠지지 않고 `booking_status: not_open` + `2026-10 예약 달력이 아직 열리지 않았다` 같은 `status_note`로 나온다. **마감이 아니다**

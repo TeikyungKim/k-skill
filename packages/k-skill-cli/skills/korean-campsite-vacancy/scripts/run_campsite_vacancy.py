@@ -629,8 +629,15 @@ DONGHAE_NOPASS = "NOPASS:"
 
 # Calendar cell labels on BD_reservation.do, and what they mean for a lookup.
 # An empty label is the important one: the booking window has not opened yet, so
-# the detail endpoint still answers with the site's FULL CAPACITY. Reporting that
-# as vacancy is wrong — nobody can have booked it.
+# the detail endpoint's number is NOT vacancy. It is not plain capacity either.
+# Donghae opens one use-date at a time, but a multi-night booking made on the
+# first night's open date reaches forward into still-unopened dates and consumes
+# them. Measured 2026-09-02 11:22, minutes after 10/02 opened: 10/03 and 10/04
+# were still `not_open` yet far below a far-out unopened baseline (자동차캠핑장
+# 37 on 10/09 vs 16 on 10/04 vs 3 on 10/03). So an N-night stay is decided at
+# 11:00 on the first night's open date, and reading an unopened number as either
+# vacancy or capacity is wrong. Callers compare against a far-out baseline date;
+# this adapter does not guess a capacity. See references/PROVIDERS.md.
 DONGHAE_LABEL_STATUS = {
     "예약현황보기": "open",
     "예약마감": "full",
@@ -641,7 +648,10 @@ STATUS_NOTE = {
     "open": None,
     "full": "예약 마감된 날짜다",
     "closed": "예약이 종료된 날짜다 (지난 날짜이거나 접수 종료)",
-    "not_open": "예약창이 아직 열리지 않았다. 아래 숫자는 잔여가 아니라 총 정원이다",
+    "not_open": (
+        "예약창이 아직 열리지 않았다. 아래 숫자를 잔여로 읽지 않는다. "
+        "연박 예약이 먼저 점유했을 수 있어 총 정원과도 다를 수 있다"
+    ),
 }
 
 

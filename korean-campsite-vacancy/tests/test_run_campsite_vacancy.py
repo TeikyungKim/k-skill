@@ -501,7 +501,8 @@ class DonghaeCollectTest(unittest.TestCase):
         )
         day = payload["results"][0]["dates"][0]
         self.assertEqual(day["booking_status"], "not_open")
-        self.assertIn("총 정원", day["status_note"])
+        self.assertIn("잔여로 읽지 않는다", day["status_note"])
+        self.assertIn("연박", day["status_note"])
         self.assertTrue(day["zones"], "the day must still be shown, not silently dropped")
         self.assertTrue(all(not z["available"] for z in day["zones"]))
         self.assertEqual(payload["filter_hits"], 0)
@@ -515,7 +516,7 @@ class DonghaeCollectTest(unittest.TestCase):
         )
         self.assertTrue(payload["results"], "an unopened day must not vanish by default")
 
-    def test_text_output_warns_about_capacity_not_vacancy(self):
+    def test_text_output_warns_the_unopened_number_is_not_vacancy(self):
         payload = helper.collect_results(
             provider_ids=("donghae-mangsang",),
             dates=("20261002",),
@@ -524,7 +525,7 @@ class DonghaeCollectTest(unittest.TestCase):
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             helper.print_text(payload)
-        self.assertIn("총 정원", buffer.getvalue())
+        self.assertIn("잔여로 읽지 않는다", buffer.getvalue())
 
     def test_open_day_still_counts_as_vacancy(self):
         payload = helper.collect_results(
