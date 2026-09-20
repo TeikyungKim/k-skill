@@ -58,6 +58,12 @@ PLACE_HEADERS = {
     "sec-fetch-dest": "empty",
 }
 DEFAULT_PROXY_BASE = "https://k-skill-proxy.nomadamas.org"
+# 2026-09-20 확인: proxy 앞단 Cloudflare가 urllib 기본 UA(Python-urllib/x.y)를 403으로 막는다.
+# UA를 명시하지 않으면 --origin 거리 계산이 항상 origin:... 403 failure로 떨어진다.
+PROXY_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "k-skill-campsite-recommend/1.0",
+}
 HTTP_TIMEOUT = 20
 RATINGS_TTL_SECONDS = 24 * 3600
 ROUTES_TTL_SECONDS = 7 * 24 * 3600
@@ -282,7 +288,7 @@ class Cache:
 
 def geocode_origin(query: str, proxy_base: str) -> dict[str, Any]:
     url = f"{proxy_base}/v1/kakao-map/search/keyword?" + urllib.parse.urlencode({"q": query, "size": 1})
-    data = _http_get_json(url, {"Accept": "application/json"})
+    data = _http_get_json(url, PROXY_HEADERS)
     docs = data.get("documents") or []
     if not docs:
         raise ValueError(f"origin not found on Kakao Local: {query!r}")
@@ -294,7 +300,7 @@ def fetch_route(origin: dict[str, Any], lon: float, lat: float, proxy_base: str)
     params = urllib.parse.urlencode(
         {"origin": f"{origin['lon']},{origin['lat']}", "destination": f"{lon},{lat}", "priority": "RECOMMEND"}
     )
-    data = _http_get_json(f"{proxy_base}/v1/kakao-mobility/directions?{params}", {"Accept": "application/json"})
+    data = _http_get_json(f"{proxy_base}/v1/kakao-mobility/directions?{params}", PROXY_HEADERS)
     routes = data.get("routes") or []
     if not routes or routes[0].get("result_code") not in (0, None):
         return None

@@ -6,12 +6,16 @@ from scripts.ticket_availability import (
     HEADERS_INTERPARK,
     HEADERS_YES24,
     INTERPARK_BASE,
+    MAX_KBO_GOODS,
     YES24_BASE,
     InterparkClient,
     Yes24Client,
     _fmt_date,
     _fmt_time,
+    classify_grade,
+    parse_game_name,
     parse_url,
+    render_kbo_text,
 )
 
 
@@ -204,6 +208,104 @@ class EndpointSafetyTest(unittest.TestCase):
     def test_bases_are_known_public_hosts(self):
         self.assertEqual(YES24_BASE, "https://ticket.yes24.com")
         self.assertEqual(INTERPARK_BASE, "https://api-ticketfront.interpark.com")
+
+
+class ParseGameNameTest(unittest.TestCase):
+    def test_home_team_comes_first(self):
+        self.assertEqual(
+            parse_game_name("두산 vs KT (9.27)"), {"home": "두산", "away": "KT"}
+        )
+
+    def test_uppercase_vs(self):
+        self.assertEqual(
+            parse_game_name("키움 VS 두산 (9.22)"), {"home": "키움", "away": "두산"}
+        )
+
+    def test_non_game_name_yields_none(self):
+        self.assertEqual(
+            parse_game_name("서울 메인쇼 (9.20)"), {"home": None, "away": None}
+        )
+
+    def test_empty_name(self):
+        self.assertEqual(parse_game_name(""), {"home": None, "away": None})
+
+
+class ClassifyGradeTest(unittest.TestCase):
+    def test_plain_grade(self):
+        self.assertEqual(
+            classify_grade("3루 외야지정석"),
+            {"wheelchair": False, "restricted_view": False},
+        )
+
+    def test_wheelchair_grade(self):
+        self.assertTrue(classify_grade("1루 레드휠체어석(동반X)")["wheelchair"])
+
+    def test_restricted_view_grade(self):
+        self.assertTrue(classify_grade("[시야방해] 3루 레드석")["restricted_view"])
+
+
+class RenderKboTextTest(unittest.TestCase):
+    @staticmethod
+    def _payload(grades, skipped=None, games=None):
+        game = {
+            "platform": "interpark",
+            "id": "26005455",
+            "goods_name": "두산 vs KT (9.27)",
+            "home": "두산",
+            "away": "KT",
+            "stadium": "잠실야구장",
+            "booking_url": "https://tickets.interpark.com/goods/26005455",
+            "sessions": [
+                {
+                    "date": "2026-09-27",
+                    "time": "17:00",
+                    "play_seq": "001",
+                    "grade_count": len(grades),
+                    "total_remain": sum(g["remain"] for g in grades),
+                    "grades": grades,
+                }
+            ],
+        }
+        return {
+            "min_remain": 3,
+            "stadium_filter": ["잠실"],
+            "games": [game] if games is None else games,
+            "skipped": skipped or [],
+        }
+
+    def test_renders_game_grades_and_link(self):
+        grades = [
+            {
+                "grade": "3루 외야지정석",
+                "remain": 1926,
+                "wheelchair": False,
+                "restricted_view": False,
+            }
+        ]
+        text = render_kbo_text(self._payload(grades))
+        self.assertIn("2026-09-27 17:00", text)
+        self.assertIn("잠실야구장", text)
+        self.assertIn("3루 외야지정석", text)
+        self.assertIn("https://tickets.interpark.com/goods/26005455", text)
+
+    def test_reports_when_nothing_meets_min_remain(self):
+        self.assertIn("3석 이상 남은 등급 없음", render_kbo_text(self._payload([])))
+
+    def test_reports_skipped_inputs(self):
+        payload = self._payload(
+            [],
+            skipped=[{"input": "interpark:1", "reason": "야구 상품이 아니다 (콘서트)"}],
+            games=[],
+        )
+        text = render_kbo_text(payload)
+        self.assertIn("건너뜀", text)
+        self.assertIn("조건에 맞는 경기가 없다", text)
+
+
+class KboGuardTest(unittest.TestCase):
+    def test_batch_cap_is_bounded(self):
+        self.assertGreater(MAX_KBO_GOODS, 0)
+        self.assertLessEqual(MAX_KBO_GOODS, 50)
 
 
 if __name__ == "__main__":
