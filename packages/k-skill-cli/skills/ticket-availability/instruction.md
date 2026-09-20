@@ -16,6 +16,7 @@ YES24 (`ticket.yes24.com`) 와 인터파크 (`tickets.interpark.com`) 의 공개
 - "YES24 콘서트 ID 58026 일정 알려줘"
 - "이 공연 R석 몇 자리 남았어?"
 - "공연 URL 줄게, 회차별 잔여석 확인해줘"
+- "고척·잠실 야구 중에 3명 앉을 자리 남은 경기 알려줘" (goods 코드를 알고 있을 때)
 
 ## When not to use
 
@@ -26,7 +27,7 @@ YES24 (`ticket.yes24.com`) 와 인터파크 (`tickets.interpark.com`) 의 공개
 
 ## Required inputs
 
-공연 URL 또는 `platform:id` 표기가 없으면 먼저 물어본다.
+공연 URL 또는 `platform:id` 표기가 없으면 먼저 물어본다. **이 스킬에는 공연/경기 검색 기능이 없다** — 아래 "goods 코드를 구하는 방법" 참고.
 
 권장 질문:
 
@@ -117,6 +118,43 @@ YES24 응답은 등급별 `price` (노출가) 도 포함:
 {"grade": "전석", "price": "110,000원", "remain": 2}
 ```
 
+### 3-1. KBO 경기 정리 (`kbo`)
+
+야구 goods 여러 개를 한 번에 받아 **구장명·경기명·일시**를 붙이고, 인원수 기준으로 등급을 걸러 예매 링크까지 정리한다. 내부적으로 goods 당 `summary` → `playSeq` → `REMAINSEAT` 순으로 공개 endpoint 만 호출한다.
+
+```bash
+npx -y @nomadamas/k-skill@0 exec ticket-availability scripts/ticket_availability.py -- \
+  kbo interpark:26012601 interpark:26005455 \
+  --stadium 잠실,고척 --min-remain 3 --exclude-wheelchair --text
+```
+
+옵션:
+
+- `--min-remain N`: N석 이상 남은 등급만 남긴다 (일행 인원수를 그대로 넣는다)
+- `--stadium 잠실,고척`: `placeName` 부분일치 필터
+- `--exclude-wheelchair` / `--exclude-restricted-view`: 휠체어석·시야방해석 제외
+- `--any-genre`: 기본은 `genreSubName == 야구` 인 상품만 남긴다
+- `--text`: 사람이 읽는 요약. 기본은 JSON
+
+JSON 출력에는 등급마다 `wheelchair`, `restricted_view` boolean 이 붙는다. 한 번에 최대 20개 goods.
+
+**`--min-remain N`은 "N석이 붙어 있다"는 뜻이 아니다.** 등급별 잔여 *수* 만 보는 것이고 연석 여부는 이 스킬이 알 수 없다. 사용자에게 좌석도에서 직접 확인하라고 안내한다.
+
+### 3-2. goods 코드를 구하는 방법
+
+이 스킬은 **검색·목록 조회를 하지 않는다.** 2026-09-20 확인 기준:
+
+- 인터파크 목록 API `/sports/goods`, `/sports/goods/period` 는 `X-Client-Id` / `X-Client-Secret` 를 요구하는 **비공개 endpoint** 다. 프런트 번들에 들어 있는 키를 꺼내 쓰는 것은 접근통제 우회이므로 하지 않는다.
+- `tickets.interpark.com/robots.txt` 는 일반 봇에 `Disallow: /` 이다. 따라서 목록 페이지 HTML 스크래핑도 하지 않는다. (스킬이 호출하는 `api-ticketfront.interpark.com` 은 별도 호스트이며 goods 단위 공개 조회만 쓴다.)
+
+그래서 코드는 이렇게 얻는다.
+
+1. 사용자가 예매 페이지 URL 을 그대로 준다 (권장).
+2. 에이전트가 웹 검색으로 해당 경기 예매 페이지를 찾아 URL 을 확보한다.
+3. 상품명은 `<홈팀> vs <원정팀> (M.D)` 포맷이고 같은 홈팀의 홈경기 코드는 대체로 연속이지만, **연속 번호를 추측해서 조회하지 않는다** (열거 행위가 된다). 확보한 코드만 조회한다.
+
+경기 일정 자체는 `kbo-results` 스킬로 확인한다.
+
 ### 4. 헬스체크 (`health`)
 
 ```bash
@@ -141,6 +179,7 @@ npx -y @nomadamas/k-skill@0 exec ticket-availability scripts/ticket_availability
 | YES24 | POST | `https://ticket.yes24.com/New/Perf/Sale/Ajax/axPerfDay.aspx` |
 | YES24 | POST | `https://ticket.yes24.com/NEw/Perf/Detail/Ajax/axPerfPlayTime.aspx` |
 | YES24 | POST | `https://ticket.yes24.com/New/Perf/Detail/Ajax/axPerfRemainSeat.aspx` |
+| Interpark | GET | `https://api-ticketfront.interpark.com/v1/goods/<id>/summary` |
 | Interpark | GET | `https://api-ticketfront.interpark.com/v1/goods/<id>/playSeq` |
 | Interpark | GET | `https://api-ticketfront.interpark.com/v1/goods/<id>/playSeq/PlaySeq/<seq>/REMAINSEAT` |
 
@@ -153,6 +192,9 @@ npx -y @nomadamas/k-skill@0 exec ticket-availability scripts/ticket_availability
 - **HTTP 4xx/5xx**: 차단/일시 장애. 우회 시도하지 않고 `http error` 출력 후 종료.
 - **JSON 스키마 변경**: YES24 axPerfRemainSeat 는 HTML 응답을 정규식으로 파싱 — 사이트 갱신 시 영향 가능. `remain` 0 으로 잘못 보고될 수 있어 사용자에게 "조회 시각 기준" 이라고 표기.
 - **공연 매진**: API 는 `remain: 0` 반환. 매진 표시.
+- **`kbo` 에서 "야구 상품이 아니다" 로 건너뜀**: `genreSubName` 이 야구가 아닌 goods 다. 의도한 것이면 `--any-genre` 를 쓴다.
+- **`kbo` 에서 구장 필터 불일치**: `placeName` 이 `--stadium` 문자열을 포함하지 않는다. 구장명은 `잠실야구장`, `고척스카이돔` 처럼 전체 이름이므로 부분 문자열로 넣는다.
+- **`summary` 는 200 인데 `playSeq` 가 400**: 지난 경기이거나 판매가 끝난 goods 다.
 
 ## Response style
 

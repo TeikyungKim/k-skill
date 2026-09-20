@@ -287,6 +287,26 @@ class InterparkClient:
             )
         return []
 
+    def get_summary(self, goods_code: str) -> dict:
+        """공개 goods 요약. 키가 필요 없고 경기명·구장명·장르를 준다."""
+        r = self.http.get(f"{INTERPARK_BASE}/v1/goods/{goods_code}/summary")
+        r.raise_for_status()
+        data = r.json()
+        if not isinstance(data, dict):
+            return {}
+        return data.get("data") or data.get("response", {}).get("data") or {}
+
+    def summary(self, goods_code: str) -> dict:
+        d = self.get_summary(goods_code)
+        return {
+            "goods_name": d.get("goodsName") or "",
+            "place": d.get("placeName") or "",
+            "genre": d.get("genreSubName") or d.get("genreName") or "",
+            "play_start_date": _fmt_date(d.get("playStartDate") or ""),
+            "play_end_date": _fmt_date(d.get("playEndDate") or ""),
+            "sold_out": bool(d.get("soldOut")),
+        }
+
     def schedule(self, goods_code: str) -> list[dict]:
         out: list[dict] = []
         for item in self.get_schedule(goods_code):
@@ -353,6 +373,137 @@ def cmd_seats(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── KBO ───────────────────────────────────────────────────────────────────────
+#
+# 인터파크 KBO 상품은 goods 단위로 하루 한 경기이고 상품명이 "<홈팀> vs <원정팀> (M.D)"
+# 포맷이다. goods 코드만 알면 아래 세 공개 endpoint 로 경기·구장·잔여석이 모두 나온다.
+#
+# goods 코드 자체를 목록으로 받아오는 공식 경로는 이 스킬에 넣지 않았다 (2026-09-20 확인):
+#   - 목록 API `/sports/goods`, `/sports/goods/period` 는 X-Client-Id / X-Client-Secret
+#     키를 요구하는 비공개 endpoint 다.
+#   - `tickets.interpark.com/robots.txt` 는 일반 봇에 `Disallow: /` 이므로 목록 페이지
+#     HTML 스크래핑도 하지 않는다.
+# 따라서 코드는 사용자가 예매 페이지 URL 로 주거나, 검색으로 찾아서 넘긴다.
+
+GAME_NAME_RE = re.compile(
+    r"^\s*(?P<home>.+?)\s*(?:vs|VS|Vs)\s*(?P<away>.+?)\s*\((?P<md>\d{1,2}\.\d{1,2})\)\s*$"
+)
+WHEELCHAIR_TOKEN = "휠체어"
+RESTRICTED_VIEW_TOKEN = "시야방해"
+MAX_KBO_GOODS = 20
+
+
+def parse_game_name(goods_name: str) -> dict:
+    m = GAME_NAME_RE.match(goods_name or "")
+    if not m:
+        return {"home": None, "away": None}
+    return {"home": m.group("home").strip(), "away": m.group("away").strip()}
+
+
+def classify_grade(grade: str) -> dict:
+    return {
+        "wheelchair": WHEELCHAIR_TOKEN in grade,
+        "restricted_view": RESTRICTED_VIEW_TOKEN in grade,
+    }
+
+
+def cmd_kbo(args: argparse.Namespace) -> int:
+    if len(args.urls) > MAX_KBO_GOODS:
+        print(
+            f"too many goods: {len(args.urls)} (max {MAX_KBO_GOODS} per run)",
+            file=sys.stderr,
+        )
+        return 2
+    stadiums = [s for s in (args.stadium or "").split(",") if s.strip()]
+    client = InterparkClient()
+    games: list[dict] = []
+    skipped: list[dict] = []
+    for raw in args.urls:
+        platform, pid = parse_url(raw)
+        if platform != "interpark":
+            skipped.append({"input": raw, "reason": "kbo 명령은 인터파크 goods 만 지원한다"})
+            continue
+        info = client.summary(pid)
+        if not args.any_genre and info.get("genre") and info["genre"] != "야구":
+            skipped.append({"input": raw, "reason": f"야구 상품이 아니다 ({info['genre']})"})
+            continue
+        place = info.get("place") or ""
+        if stadiums and not any(s.strip() in place for s in stadiums):
+            skipped.append({"input": raw, "reason": f"구장 필터 불일치 ({place or '구장 미상'})"})
+            continue
+        sessions = []
+        for _, sess in sorted(client.all_seats(pid).items()):
+            grades = []
+            for seat in sess["seats"]:
+                remain = int(seat.get("remain") or 0)
+                if remain < args.min_remain:
+                    continue
+                flags = classify_grade(seat["grade"])
+                if args.exclude_wheelchair and flags["wheelchair"]:
+                    continue
+                if args.exclude_restricted_view and flags["restricted_view"]:
+                    continue
+                grades.append({"grade": seat["grade"], "remain": remain, **flags})
+            grades.sort(key=lambda g: -g["remain"])
+            sessions.append(
+                {
+                    "date": sess["date"],
+                    "time": sess["time"],
+                    "play_seq": sess["play_seq"],
+                    "grade_count": len(grades),
+                    "total_remain": sum(g["remain"] for g in grades),
+                    "grades": grades,
+                }
+            )
+        games.append(
+            {
+                "platform": "interpark",
+                "id": pid,
+                "goods_name": info.get("goods_name"),
+                **parse_game_name(info.get("goods_name") or ""),
+                "stadium": place,
+                "booking_url": f"https://tickets.interpark.com/goods/{pid}",
+                "sessions": sessions,
+            }
+        )
+    payload = {
+        "min_remain": args.min_remain,
+        "stadium_filter": stadiums or None,
+        "games": games,
+        "skipped": skipped,
+    }
+    if args.text:
+        print(render_kbo_text(payload))
+    else:
+        print(_dump(payload, args.compact))
+    return 0
+
+
+def render_kbo_text(payload: dict) -> str:
+    lines: list[str] = []
+    n = payload["min_remain"]
+    for g in payload["games"]:
+        for sess in g["sessions"]:
+            head = f"{sess['date']} {sess['time']}  {g['stadium']}  {g['goods_name']}"
+            lines.append(head)
+            if not sess["grades"]:
+                lines.append(f"    {n}석 이상 남은 등급 없음 (조회 시각 기준)")
+            else:
+                lines.append(
+                    f"    {sess['grade_count']}개 등급 / 합계 {sess['total_remain']}석"
+                )
+                for gr in sess["grades"]:
+                    # 등급명 자체에 '휠체어'/'시야방해'가 들어 있으므로 표식을 덧붙이지 않는다.
+                    lines.append(f"      {gr['remain']:>6}석  {gr['grade']}")
+            lines.append(f"    예매: {g['booking_url']}")
+            lines.append("")
+    for sk in payload["skipped"]:
+        lines.append(f"건너뜀: {sk['input']} — {sk['reason']}")
+    if not payload["games"]:
+        lines.append("조건에 맞는 경기가 없다.")
+    return "\n".join(lines).rstrip()
+
+
 def cmd_health(args: argparse.Namespace) -> int:
     http = _require_httpx()
     results: dict = {}
@@ -407,6 +558,24 @@ def main(argv: list[str] | None = None) -> int:
                       help="YES24 — 6개월 전체 (기본: 3주)")
     _common(p_st)
     p_st.set_defaults(func=cmd_seats)
+
+    p_kbo = sub.add_parser(
+        "kbo",
+        help="KBO 경기 goods 여러 개를 받아 구장·경기명과 함께 잔여석을 정리한다",
+    )
+    p_kbo.add_argument("urls", nargs="+", help="인터파크 goods URL 또는 interpark:<code> (최대 20개)")
+    p_kbo.add_argument("--min-remain", type=int, default=1,
+                       help="이 수 이상 남은 등급만 남긴다 (예: 일행 3명이면 3)")
+    p_kbo.add_argument("--stadium", default="",
+                       help="구장명 부분일치 필터, 콤마 구분 (예: 잠실,고척)")
+    p_kbo.add_argument("--exclude-wheelchair", action="store_true",
+                       help="휠체어석 등급을 제외한다")
+    p_kbo.add_argument("--exclude-restricted-view", action="store_true",
+                       help="시야방해 등급을 제외한다")
+    p_kbo.add_argument("--any-genre", action="store_true",
+                       help="야구 외 장르도 허용한다 (기본은 야구 상품만)")
+    p_kbo.add_argument("--text", action="store_true", help="사람이 읽는 요약 출력")
+    p_kbo.set_defaults(func=cmd_kbo)
 
     p_h = sub.add_parser("health", help="API endpoint reachability check")
     _common(p_h)
